@@ -935,79 +935,310 @@ function renderTable(id, rows, tableColumns) {
 }
 
 // Draw report combo chart.
+// Draw advanced management-friendly combo chart.
+// Bar  = Sales Amount, using left Y-axis.
+// Line = Quantity Sold, using right Y-axis.
 function drawChart(id, data) {
+  // Get chart container by id.
   const element = $(id);
 
-  if (!data.length) {
+  // Stop if no data is available.
+  if (!data || !data.length) {
     element.innerHTML = '<div class="empty-state">No report data.</div>';
     return;
   }
 
-  const width = 980;
-  const height = 390;
-  const padding = { top: 24, right: 44, bottom: 72, left: 76 };
+  // Chart canvas size.
+  const width = 1120;
+  const height = 470;
+
+  // Chart padding.
+  // More right padding is needed because right Y-axis shows Qty.
+  const padding = {
+    top: 48,
+    right: 92,
+    bottom: 92,
+    left: 92
+  };
+
+  // Plot area size.
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
 
+  // Maximum values for each axis.
   const maxAmount = Math.max(...data.map((item) => numberValue(item.amount)), 1);
   const maxQty = Math.max(...data.map((item) => numberValue(item.qty)), 1);
 
-  const step = plotWidth / Math.max(data.length, 1);
-  const barWidth = Math.min(64, Math.max(22, step * 0.52));
+  // Add small headroom so labels do not hit the top of chart.
+  const amountAxisMax = maxAmount * 1.15;
+  const qtyAxisMax = maxQty * 1.25;
 
+  // Calculate horizontal spacing.
+  const step = plotWidth / Math.max(data.length, 1);
+
+  // Calculate bar width dynamically.
+  const barWidth = Math.min(58, Math.max(24, step * 0.5));
+
+  // X position for each data point.
   const x = (index) => padding.left + step * index + step / 2;
-  const yAmount = (value) => padding.top + plotHeight - numberValue(value) / maxAmount * plotHeight;
-  const yQty = (value) => padding.top + plotHeight - numberValue(value) / maxQty * plotHeight;
+
+  // Y position for amount bar.
+  const yAmount = (value) => {
+    return padding.top + plotHeight - (numberValue(value) / amountAxisMax) * plotHeight;
+  };
+
+  // Y position for qty line.
+  const yQty = (value) => {
+    return padding.top + plotHeight - (numberValue(value) / qtyAxisMax) * plotHeight;
+  };
+
+  // Make text safe before rendering into SVG.
   const safe = (value) => escapeHtml(String(value));
 
-  const grid = [0, 0.25, 0.5, 0.75, 1]
-    .map((ratio) => {
-      const y = padding.top + plotHeight - ratio * plotHeight;
-      return `
-        <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"></line>
-        <text x="${padding.left - 12}" y="${y + 4}" text-anchor="end">${safe(formatCurrency(maxAmount * ratio).replace('IDR ', ''))}</text>
-      `;
-    })
-    .join('');
+  // Short amount label for chart readability.
+  // Example: 1250000 -> 1.25M
+  const shortAmount = (value) => {
+    const number = numberValue(value);
 
-  const bars = data
-    .map((item, index) => {
-      const barHeight = padding.top + plotHeight - yAmount(item.amount);
-      const barX = x(index) - barWidth / 2;
-      const barY = yAmount(item.amount);
+    if (number >= 1000000000) {
+      return `${(number / 1000000000).toFixed(1)}B`;
+    }
 
-      return `
-        <rect x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="8">
-          <title>${safe(item.label)} Amount: ${safe(formatCurrency(item.amount))}</title>
+    if (number >= 1000000) {
+      return `${(number / 1000000).toFixed(1)}M`;
+    }
+
+    if (number >= 1000) {
+      return `${(number / 1000).toFixed(0)}K`;
+    }
+
+    return formatNumber(number);
+  };
+
+  // Short qty label.
+  const shortQty = (value) => {
+    return formatNumber(value);
+  };
+
+  // Build left and right Y-axis ticks.
+  const ticks = [0, 0.25, 0.5, 0.75, 1];
+
+  // Grid lines and left amount axis labels.
+  const amountAxis = ticks.map((ratio) => {
+    const y = padding.top + plotHeight - ratio * plotHeight;
+    const amountValue = amountAxisMax * ratio;
+
+    return `
+      <line
+        x1="${padding.left}"
+        y1="${y}"
+        x2="${width - padding.right}"
+        y2="${y}"
+        class="grid-line">
+      </line>
+
+      <text
+        x="${padding.left - 14}"
+        y="${y + 4}"
+        text-anchor="end"
+        class="axis-label amount-axis-label">
+        ${safe(shortAmount(amountValue))}
+      </text>
+    `;
+  }).join('');
+
+  // Right qty axis labels.
+  const qtyAxis = ticks.map((ratio) => {
+    const y = padding.top + plotHeight - ratio * plotHeight;
+    const qtyValue = qtyAxisMax * ratio;
+
+    return `
+      <text
+        x="${width - padding.right + 14}"
+        y="${y + 4}"
+        text-anchor="start"
+        class="axis-label qty-axis-label">
+        ${safe(shortQty(qtyValue))}
+      </text>
+    `;
+  }).join('');
+
+  // Axis titles.
+  const axisTitles = `
+    <text
+      x="${padding.left}"
+      y="24"
+      text-anchor="start"
+      class="axis-title amount-title">
+      Sales Amount
+    </text>
+
+    <text
+      x="${width - padding.right}"
+      y="24"
+      text-anchor="end"
+      class="axis-title qty-title">
+      Qty Sold
+    </text>
+  `;
+
+  // Identify highest sales amount to highlight.
+  const highestAmount = Math.max(...data.map((item) => numberValue(item.amount)));
+
+  // Build amount bars with inside-end labels.
+  const bars = data.map((item, index) => {
+    const amount = numberValue(item.amount);
+    const barHeight = padding.top + plotHeight - yAmount(amount);
+    const barX = x(index) - barWidth / 2;
+    const barY = yAmount(amount);
+
+    // If bar is too small, keep label slightly above the bar for readability.
+    const labelInside = barHeight >= 32;
+    const labelY = labelInside ? barY + 18 : barY - 8;
+    const labelClass = labelInside ? 'bar-label inside' : 'bar-label outside';
+
+    // Highlight the highest amount bar.
+    const barClass = amount === highestAmount ? 'amount-bar max-bar' : 'amount-bar';
+
+    return `
+      <g class="bar-group">
+        <rect
+          x="${barX}"
+          y="${barY}"
+          width="${barWidth}"
+          height="${barHeight}"
+          rx="9"
+          class="${barClass}">
+          <title>${safe(item.label)} | Amount: ${safe(formatCurrency(amount))}</title>
         </rect>
-      `;
-    })
-    .join('');
 
-  const linePoints = data.map((item, index) => `${x(index)},${yQty(item.qty)}`).join(' ');
+        <text
+          x="${x(index)}"
+          y="${labelY}"
+          text-anchor="middle"
+          class="${labelClass}">
+          ${safe(shortAmount(amount))}
+        </text>
+      </g>
+    `;
+  }).join('');
 
-  const dots = data
-    .map((item, index) => `
-      <circle cx="${x(index)}" cy="${yQty(item.qty)}" r="5">
-        <title>${safe(item.label)} Qty: ${safe(formatNumber(item.qty))}</title>
-      </circle>
-    `)
-    .join('');
+  // Build line points for qty.
+  const linePoints = data.map((item, index) => {
+    return `${x(index)},${yQty(item.qty)}`;
+  }).join(' ');
 
-  const labels = data
-    .map((item, index) => `
-      <text x="${x(index)}" y="${height - 34}" text-anchor="end" transform="rotate(-35 ${x(index)} ${height - 34})">${safe(item.label)}</text>
-    `)
-    .join('');
+  // Build qty dots and outside-end labels.
+  const qtyDots = data.map((item, index) => {
+    const qty = numberValue(item.qty);
+    const dotX = x(index);
+    const dotY = yQty(qty);
 
+    // Label is intentionally outside the line point.
+    const labelX = dotX + 10;
+    const labelY = dotY - 12;
+
+    return `
+      <g class="qty-point">
+        <circle
+          cx="${dotX}"
+          cy="${dotY}"
+          r="5.5"
+          class="qty-dot">
+          <title>${safe(item.label)} | Qty: ${safe(formatNumber(qty))}</title>
+        </circle>
+
+        <rect
+          x="${labelX - 4}"
+          y="${labelY - 14}"
+          width="${Math.max(34, String(shortQty(qty)).length * 8)}"
+          height="18"
+          rx="8"
+          class="qty-label-bg">
+        </rect>
+
+        <text
+          x="${labelX}"
+          y="${labelY}"
+          text-anchor="start"
+          class="qty-label">
+          ${safe(shortQty(qty))}
+        </text>
+      </g>
+    `;
+  }).join('');
+
+  // X-axis labels.
+  const xLabels = data.map((item, index) => {
+    return `
+      <text
+        x="${x(index)}"
+        y="${height - 42}"
+        text-anchor="end"
+        transform="rotate(-35 ${x(index)} ${height - 42})"
+        class="x-axis-label">
+        ${safe(item.label)}
+      </text>
+    `;
+  }).join('');
+
+  // Add a subtle average amount reference line.
+  const averageAmount = data.reduce((sum, item) => sum + numberValue(item.amount), 0) / data.length;
+  const averageY = yAmount(averageAmount);
+
+  const averageLine = `
+    <line
+      x1="${padding.left}"
+      y1="${averageY}"
+      x2="${width - padding.right}"
+      y2="${averageY}"
+      class="average-line">
+    </line>
+
+    <text
+      x="${width - padding.right - 8}"
+      y="${averageY - 6}"
+      text-anchor="end"
+      class="average-label">
+      Avg Amount ${safe(shortAmount(averageAmount))}
+    </text>
+  `;
+
+  // Main SVG output.
   element.innerHTML = `
-    <svg class="combo-chart" viewBox="0 0 ${width} ${height}" role="img">
-      <g>${grid}</g>
-      <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="axis-line"></line>
+    <svg class="combo-chart advanced-chart" viewBox="0 0 ${width} ${height}" role="img">
+      <rect x="0" y="0" width="${width}" height="${height}" class="chart-bg"></rect>
+
+      ${axisTitles}
+      ${amountAxis}
+      ${qtyAxis}
+      ${averageLine}
+
+      <line
+        x1="${padding.left}"
+        y1="${padding.top + plotHeight}"
+        x2="${width - padding.right}"
+        y2="${padding.top + plotHeight}"
+        class="axis-line">
+      </line>
+
+      <line
+        x1="${width - padding.right}"
+        y1="${padding.top}"
+        x2="${width - padding.right}"
+        y2="${padding.top + plotHeight}"
+        class="right-axis-line">
+      </line>
+
       <g class="amount-bars">${bars}</g>
-      <polyline class="qty-line" points="${linePoints}"></polyline>
-      <g class="qty-dots">${dots}</g>
-      <g>${labels}</g>
+
+      <polyline
+        class="qty-line"
+        points="${linePoints}">
+      </polyline>
+
+      <g class="qty-dots">${qtyDots}</g>
+      <g class="x-labels">${xLabels}</g>
     </svg>
   `;
 }
