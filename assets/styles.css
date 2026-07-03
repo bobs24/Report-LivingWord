@@ -825,3 +825,129 @@ th {
     height: 30px;
   }
 }
+
+/* =========================================================
+   Advanced Management Chart
+   Applies to all screen sizes
+   ========================================================= */
+
+.advanced-chart {
+  width: 100%;
+  min-width: 760px;
+  height: 470px;
+  display: block;
+}
+
+.advanced-chart .chart-bg {
+  fill: #fbfdfc;
+}
+
+.advanced-chart .grid-line {
+  stroke: #e8f0ed;
+  stroke-width: 1;
+}
+
+.advanced-chart .axis-line,
+.advanced-chart .right-axis-line {
+  stroke: #cfdcd8;
+  stroke-width: 1.2;
+}
+
+.advanced-chart .axis-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.advanced-chart .amount-title {
+  fill: #477466;
+}
+
+.advanced-chart .qty-title {
+  fill: #9a7639;
+}
+
+.advanced-chart .axis-label {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.advanced-chart .amount-axis-label {
+  fill: #477466;
+}
+
+.advanced-chart .qty-axis-label {
+  fill: #9a7639;
+}
+
+.advanced-chart .amount-bar {
+  fill: #aed2c8;
+}
+
+.advanced-chart .max-bar {
+  fill: #6f9f8f;
+}
+
+.advanced-chart .bar-label {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.advanced-chart .bar-label.inside {
+  fill: #ffffff;
+}
+
+.advanced-chart .bar-label.outside {
+  fill: #477466;
+}
+
+.advanced-chart .qty-line {
+  fill: none;
+  stroke: #9a7639;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.advanced-chart .qty-dot {
+  fill: #9a7639;
+  stroke: #ffffff;
+  stroke-width: 2.5;
+}
+
+.advanced-chart .qty-label-bg {
+  fill: #fff7e6;
+  stroke: #f0dfb9;
+  stroke-width: 1;
+}
+
+.advanced-chart .qty-label {
+  fill: #7b5e2f;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.advanced-chart .x-axis-label {
+  fill: #6b7b77;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.advanced-chart .average-line {
+  stroke: #6b7b77;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 6;
+  opacity: 0.75;
+}
+
+.advanced-chart .average-label {
+  fill: #6b7b77;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Make advanced chart still usable on mobile */
+@media (max-width: 700px) {
+  .advanced-chart {
+    min-width: 760px;
+  }
+}
