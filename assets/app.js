@@ -759,12 +759,19 @@ function renderReportInputs() {
 }
 
 // Load report data from Supabase.
-async function loadReport() {
+// Load report data from Supabase.
+async function loadReport(event) {
+  // Prevent accidental default behavior from button/form context.
+  if (event) event.preventDefault();
+
+  // Stop if Supabase client is not ready.
   if (!ensureClient()) return;
 
+  // Read report date range from visible report inputs.
   const range = getRange();
   if (!range) return;
 
+  // Build base query from sales table.
   let query = state.client
     .from('sales')
     .select('*')
@@ -773,6 +780,7 @@ async function loadReport() {
     .lte('sale_date', range.endDate)
     .order('sale_date', { ascending: true });
 
+  // Your current index.html uses reportProductFilter and reportLocationFilter.
   const productInput = $('reportProductFilter');
   const skuInput = $('reportSkuFilter');
   const locationInput = $('reportLocationFilter');
@@ -781,15 +789,23 @@ async function loadReport() {
   const sku = cleanText(skuInput?.value);
   const location = cleanText(locationInput?.value);
 
+  // Apply optional filters only when filled.
   if (product) query = query.ilike('product_name', `%${product}%`);
   if (sku) query = query.ilike('sku', `%${sku}%`);
   if (location) query = query.ilike('location', `%${location}%`);
 
+  // Execute Supabase query.
   const { data, error } = await query;
 
-  if (error) return showMessage(error.message, 'err');
+  // Show error from Supabase if query fails.
+  if (error) {
+    return showMessage(error.message, 'err');
+  }
 
+  // Render KPI cards, summary tables, and trend chart.
   buildReport(data || []);
+
+  // Confirm successful action.
   showMessage('Report loaded.', 'ok');
 }
 
