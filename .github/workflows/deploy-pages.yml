@@ -2,11 +2,6 @@ name: Deploy static app to GitHub Pages
 on:
   push:
     branches: [ main ]
-    paths-ignore:
-      - "README.md"
-      - "docs/**"
-      - "database/**"
-      - ".gitignore"
   workflow_dispatch:
 permissions:
   contents: read

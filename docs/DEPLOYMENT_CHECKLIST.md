@@ -1,13 +1,10 @@
-# Deployment Checklist v20
+# Validation Checklist v21
 
-- [ ] GitHub Pages source is `GitHub Actions`.
-- [ ] `SUPABASE_URL` GitHub secret exists.
-- [ ] `SUPABASE_ANON_KEY` GitHub secret exists.
-- [ ] `database/schema.sql` has been run in Supabase.
-- [ ] Normal category requires Order / Invoice Number.
-- [ ] Free Sample can submit with blank Order / Invoice Number.
+- [ ] `index.html` loads only `assets/styles.css` and `assets/app.js`.
 - [ ] Draft edit pencil works.
 - [ ] Draft X remove works.
-- [ ] Revoke button works.
-- [ ] Report chart renders cleanly.
-- [ ] XLSX amount fields are numeric.
+- [ ] Sales Revoke works.
+- [ ] Report chart renders after Load Report.
+- [ ] Mobile tabs are scrollable.
+- [ ] Mobile dropdown opens as bottom sheet.
+- [ ] XLSX values are numeric.
