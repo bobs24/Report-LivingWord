@@ -1,43 +1,1323 @@
-const APP_CONFIG=window.APP_CONFIG||{};
-const MASTER_OPTIONS={category:['Online','Offline','Free Sample','Tier 1','Tier 2','Tier 3'],channel:['Shopee','Tokopedia','WA Order','Conference'],location:['Apartemen Surabaya','Mavelyn','Gudang Jemursari','Gudang Riverside','Gibeon','Petra','LilinKecil','Insight Unlimited']};
-const MONTHS=[{n:1,name:'January'},{n:2,name:'February'},{n:3,name:'March'},{n:4,name:'April'},{n:5,name:'May'},{n:6,name:'June'},{n:7,name:'July'},{n:8,name:'August'},{n:9,name:'September'},{n:10,name:'October'},{n:11,name:'November'},{n:12,name:'December'}];
-const state={client:null,user:null,sales:[],stock:[],transfers:[],movements:[],draftLines:[],editLineIndex:null,reportRows:[],reportProductSummary:[],reportChannelSummary:[],reportTimeSeries:[],stockIndex:{allProducts:[],availableProducts:[],allSkus:[],availableSkus:[],bySku:{},byProduct:{},bySkuLocation:{},byProductLocation:{},availableSkusByLocation:{},availableProductsByLocation:{}}};
-const columns={sales:['status','action','sale_date','created_by','location','category','channel','order_number','sku','product_name','qty','price','discount_type','discount_value','discount','total_price','remark'],stock:['stock_status','location','sku','product_name','qty','price','tier1_price','tier2_price','tier3_price','cogs','updated_at'],transfer:['transfer_date','created_by','sku','product_name','from_location','to_location','qty','remark'],movement:['created_at','created_by','movement_type','location','sku','product_name','qty_change','reference_type','reference_key','remark'],draft:['action','sku','product_name','qty','price','discount_type','discount_value','line_total'],productSummary:['product_name','qty','amount'],channelSummary:['channel','qty','amount','transactions']};
-const $=id=>document.getElementById(id);
-document.addEventListener('DOMContentLoaded',async()=>{init();setDefaultDates();bindEvents();renderReportInputs();renderDraftTable();initDropdowns();await loadUser();await refreshAll()});
-function init(){if(!APP_CONFIG.SUPABASE_URL||!APP_CONFIG.SUPABASE_ANON_KEY){$('userEmail').textContent='Supabase config missing';showMessage('Missing Supabase config. Check assets/config.js and GitHub Secrets.','err');return}state.client=supabase.createClient(APP_CONFIG.SUPABASE_URL,APP_CONFIG.SUPABASE_ANON_KEY)}
-function bindEvents(){document.querySelectorAll('.tab-button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab,b));$('loginButton').onclick=signInWithGoogle;$('logoutButton').onclick=signOut;$('refreshButton').onclick=refreshAll;$('addLineButton').onclick=addDraftLine;$('submitOrderButton').onclick=submitSalesOrder;$('stockForm').onsubmit=submitStock;$('transferForm').onsubmit=submitTransfer;$('reportType').onchange=renderReportInputs;$('loadReportButton').onclick=loadReport;document.querySelectorAll('[data-export]').forEach(b=>b.onclick=()=>exportByType(b.dataset.export));['salesSearch','stockSearch','transferSearch','movementSearch'].forEach(id=>$(id).addEventListener('input',renderMainTables));document.addEventListener('click',handleTableActions);document.querySelector('[name="category"]').addEventListener('change',e=>{if(['Tier 1','Tier 2','Tier 3'].includes(e.target.value))document.querySelector('[name="channel"]').value='WA Order';if(e.target.value==='Free Sample')document.querySelector('[name="order_number"]').value='';syncSkuProduct(e.target)});document.querySelectorAll('[name="sku"],[name="order_number"]').forEach(i=>i.addEventListener('input',()=>{const p=i.selectionStart;i.value=i.value.toUpperCase();i.setSelectionRange(p,p)}))}
-function setDefaultDates(){const t=new Date().toISOString().slice(0,10);document.querySelectorAll('input[type="date"]').forEach(i=>i.value=t)}
-async function signInWithGoogle(){if(!ensureClient())return;const{error}=await state.client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.href.split('#')[0]}});if(error)showMessage(error.message,'err')}
-async function signOut(){if(!ensureClient())return;await state.client.auth.signOut();state.user=null;updateUserDisplay();showMessage('Signed out successfully.','ok')}
-async function loadUser(){if(!state.client){$('userEmail').textContent='Not connected';return}const{data,error}=await state.client.auth.getUser();if(error){$('userEmail').textContent='Session check failed';showMessage(error.message,'err');return}state.user=data.user||null;updateUserDisplay()}
-function updateUserDisplay(){$('userEmail').textContent=state.user?.email||'Not signed in'}
-async function refreshAll(){if(!ensureClient())return;setLoading(true);await loadUser();const rs=await Promise.all([fetchAllRows('sales','created_at',false),fetchAllRows('stock','location',true),fetchAllRows('transfer_stock','created_at',false),fetchAllRows('stock_movements','created_at',false)]);setLoading(false);for(const r of rs){if(r.error)return showMessage(r.error.message,'err')}state.sales=rs[0].data||[];state.stock=(rs[1].data||[]).map(addStockStatus).sort((a,b)=>String(a.location).localeCompare(String(b.location))||String(a.sku).localeCompare(String(b.sku)));state.transfers=rs[2].data||[];state.movements=rs[3].data||[];buildStockIndex(state.stock);renderMainTables();showMessage('Data refreshed.','ok')}
-async function fetchAllRows(t,o,a=true){let all=[],from=0,b=1000;while(true){const r=await state.client.from(t).select('*').order(o,{ascending:a}).range(from,from+b-1);if(r.error)return{data:all,error:r.error};all=all.concat(r.data||[]);if(!r.data||r.data.length<b)break;from+=b}return{data:all,error:null}}
-function buildStockIndex(rows){const allP=new Set(),availP=new Set(),allS=new Set(),availS=new Set(),bySku={},byProduct={},bySkuLocation={},byProductLocation={},skuLoc={},prodLoc={};rows.forEach(r=>{const sku=cleanText(r.sku).toUpperCase(),p=cleanText(r.product_name),l=cleanText(r.location),q=numberValue(r.qty),rec={sku,product_name:p,location:l,qty:q,price:numberValue(r.price),tier1_price:numberValue(r.tier1_price),tier2_price:numberValue(r.tier2_price),tier3_price:numberValue(r.tier3_price),cogs:numberValue(r.cogs)};if(!sku&&!p)return;if(sku){allS.add(sku);bySku[sku]??=rec;if(l)bySkuLocation[`${l}||${sku}`]=rec}if(p){allP.add(p);byProduct[p.toLowerCase()]??=rec;if(l)byProductLocation[`${l}||${p.toLowerCase()}`]=rec}if(q>0){sku&&availS.add(sku);p&&availP.add(p);if(l){skuLoc[l]??=new Set();prodLoc[l]??=new Set();sku&&skuLoc[l].add(sku);p&&prodLoc[l].add(p)}}});state.stockIndex={allProducts:[...allP].sort(),availableProducts:[...availP].sort(),allSkus:[...allS].sort(),availableSkus:[...availS].sort(),bySku,byProduct,bySkuLocation,byProductLocation,availableSkusByLocation:Object.fromEntries(Object.entries(skuLoc).map(([k,v])=>[k,[...v].sort()])),availableProductsByLocation:Object.fromEntries(Object.entries(prodLoc).map(([k,v])=>[k,[...v].sort()]))}}
-function initDropdowns(){document.querySelectorAll('[data-dd]').forEach(input=>{if(input.dataset.ready)return;input.dataset.ready='1';const panel=document.createElement('div');panel.className='dropdown-panel';panel.hidden=true;document.body.appendChild(panel);input._panel=panel;input.addEventListener('focus',()=>renderDropdown(input));input.addEventListener('input',()=>renderDropdown(input));input.addEventListener('change',()=>syncSkuProduct(input));window.addEventListener('scroll',()=>!panel.hidden&&positionDropdown(input),true);window.addEventListener('resize',()=>!panel.hidden&&positionDropdown(input));document.addEventListener('pointerdown',e=>{if(e.target!==input&&!panel.contains(e.target))panel.hidden=true})})}
-function positionDropdown(input){const p=input._panel,r=input.getBoundingClientRect(),w=visualViewport?.width||innerWidth,h=visualViewport?.height||innerHeight;if(w<=700){p.classList.add('mobile-mode');return}p.classList.remove('mobile-mode');p.style.left=`${Math.max(8,Math.min(r.left,w-r.width-8))}px`;p.style.top=`${r.bottom+4}px`;p.style.width=`${Math.max(r.width,180)}px`;p.style.maxHeight=`${Math.max(140,h-r.bottom-16)}px`}
-function dropdownOptions(input){const t=input.dataset.dd,idx=state.stockIndex;if(t==='category')return MASTER_OPTIONS.category;if(t==='channel')return MASTER_OPTIONS.channel;if(t==='location')return MASTER_OPTIONS.location;if(t==='sku-stock')return idx.allSkus;if(t==='product-stock'||t==='product-report')return idx.allProducts;const form=input.closest('form'),loc=cleanText(form?.querySelector('[name="location"]')?.value),from=cleanText(form?.querySelector('[name="from_location"]')?.value);if(t==='sku-sale'||t==='sku-report')return loc&&idx.availableSkusByLocation[loc]?idx.availableSkusByLocation[loc]:idx.availableSkus;if(t==='product-sale')return loc&&idx.availableProductsByLocation[loc]?idx.availableProductsByLocation[loc]:idx.availableProducts;if(t==='sku-transfer')return from&&idx.availableSkusByLocation[from]?idx.availableSkusByLocation[from]:idx.availableSkus;if(t==='product-transfer')return from&&idx.availableProductsByLocation[from]?idx.availableProductsByLocation[from]:idx.availableProducts;return[]}
-function renderDropdown(input){const panel=input._panel,q=cleanText(input.value).toLowerCase(),opts=dropdownOptions(input).filter(x=>String(x).toLowerCase().includes(q)).slice(0,40);panel.innerHTML=opts.length?opts.map(o=>`<button type="button" class="dropdown-option">${escapeHtml(o)}</button>`).join(''):'<div class="dropdown-empty">No matching option</div>';panel.querySelectorAll('button').forEach(b=>b.onclick=()=>{input.value=b.textContent;panel.hidden=true;input.dispatchEvent(new Event('change',{bubbles:true}))});panel.hidden=false;positionDropdown(input)}
-function addDraftLine(){const f=$('salesForm'),line={sku:cleanText(f.sku.value).toUpperCase(),product_name:cleanText(f.product_name.value),qty:numberValue(f.qty.value),price:numberValue(f.price.value),discount_type:cleanText(f.discount_type.value)||'AMOUNT',discount_value:numberValue(f.discount_value.value),remark:cleanText(f.remark.value)};if(!line.sku||!line.product_name||line.qty<=0)return showMessage('Please fill SKU, Product Name, and Qty correctly.','err');const edit=Number.isInteger(state.editLineIndex)?state.editLineIndex:null;if(state.draftLines.some((x,i)=>x.sku===line.sku&&i!==edit))return showMessage('Duplicate SKU in draft.','err');line.line_total=calcLine(line);if(edit!==null&&state.draftLines[edit]){state.draftLines[edit]=line;state.editLineIndex=null;$('addLineButton').textContent='Add Product to Draft';showMessage('Draft line updated.','ok')}else{state.draftLines.push(line);showMessage('Product added to draft.','ok')}['sku','product_name','qty','price','discount_value','remark'].forEach(n=>{if(f[n])f[n].value=n==='qty'?1:n==='discount_value'?0:''});renderDraftTable()}
-function editDraftLine(i){const l=state.draftLines[i],f=$('salesForm');if(!l)return;f.sku.value=l.sku;f.product_name.value=l.product_name;f.qty.value=l.qty;f.price.value=l.price;f.discount_type.value=l.discount_type;f.discount_value.value=l.discount_value;f.remark.value=l.remark||'';state.editLineIndex=i;$('addLineButton').textContent='Update Draft Line';f.sku.focus();showMessage('Draft line loaded for editing.','ok')}
-function removeDraftLine(i){state.draftLines.splice(i,1);if(state.editLineIndex===i){state.editLineIndex=null;$('addLineButton').textContent='Add Product to Draft'}renderDraftTable();showMessage('Draft line removed.','ok')}
-function renderDraftTable(){renderTable('draftTable',state.draftLines.map((x,i)=>({...x,action:i})),columns.draft);$('draftSummaryText').textContent=state.draftLines.length?`${state.draftLines.length} line(s), total ${formatCurrency(state.draftLines.reduce((s,x)=>s+x.line_total,0))}`:'No draft lines yet.'}
-function calcLine(l){const gross=l.qty*l.price,disc=l.discount_type==='PERCENT'?gross*l.discount_value/100:l.discount_value;return gross-disc}
-async function submitSalesOrder(){if(!ensureReadyForWrite())return;if(!state.draftLines.length)return showMessage('Please add at least one product first.','err');const f=$('salesForm'),h={sale_date:f.sale_date.value,location:cleanText(f.location.value),category:cleanText(f.category.value),channel:cleanText(f.channel.value),order_number:cleanText(f.order_number.value).toUpperCase()};if(['Tier 1','Tier 2','Tier 3'].includes(h.category))h.channel='WA Order';if(h.category==='Free Sample')h.order_number='';if(h.category!=='Free Sample'&&!h.order_number)return showMessage('Order / Invoice Number is required except for Free Sample.','err');const{error}=await state.client.rpc('add_sales_order',{p_header:h,p_lines:state.draftLines});if(error)return showMessage(error.message,'err');state.draftLines=[];state.editLineIndex=null;renderDraftTable();showMessage('Full order submitted successfully.','ok');await refreshAll()}
-async function submitStock(e){e.preventDefault();if(!ensureReadyForWrite())return;const p=normalizeStock(formObj(e.target));const{error}=await state.client.rpc('upsert_stock_item',{p_location:p.location,p_sku:p.sku,p_product_name:p.product_name,p_qty:p.qty,p_price:p.price,p_tier1_price:p.tier1_price,p_tier2_price:p.tier2_price,p_tier3_price:p.tier3_price,p_cogs:p.cogs});if(error)return showMessage(error.message,'err');e.target.reset();showMessage('Stock saved.','ok');await refreshAll()}
-async function submitTransfer(e){e.preventDefault();if(!ensureReadyForWrite())return;const p=normalizeTransfer(formObj(e.target));const{error}=await state.client.rpc('transfer_stock_transaction',{p_transfer_date:p.transfer_date,p_sku:p.sku,p_product_name:p.product_name,p_from_location:p.from_location,p_to_location:p.to_location,p_qty:p.qty,p_remark:p.remark});if(error)return showMessage(error.message,'err');e.target.reset();setDefaultDates();showMessage('Transfer saved.','ok');await refreshAll()}
-async function revokeSale(id){if(!ensureReadyForWrite())return;const reason=prompt('Reason for revoke?');if(reason===null)return;if(!cleanText(reason))return showMessage('Revoke reason is required.','err');const{error}=await state.client.rpc('revoke_sales_transaction',{p_sales_id:id,p_revoke_reason:cleanText(reason)});if(error)return showMessage(error.message,'err');showMessage('Sales revoked and stock returned.','ok');await refreshAll()}
-function handleTableActions(e){const edit=e.target.closest('[data-edit-line]'),del=e.target.closest('[data-remove-line]'),rev=e.target.closest('[data-revoke-sales-id]');if(edit)editDraftLine(Number(edit.dataset.editLine));if(del)removeDraftLine(Number(del.dataset.removeLine));if(rev)revokeSale(rev.dataset.revokeSalesId)}
-function renderMainTables(){const s=filterRows(state.sales,$('salesSearch').value);renderTable('salesTable',s,columns.sales);renderTable('stockTable',filterRows(state.stock,$('stockSearch').value),columns.stock);renderTable('transferTable',filterRows(state.transfers,$('transferSearch').value),columns.transfer);renderTable('movementTable',filterRows(state.movements,$('movementSearch').value),columns.movement);$('salesCountText').textContent=`Showing ${s.length.toLocaleString()} of ${state.sales.length.toLocaleString()} loaded transactions.`}
-function renderReportInputs(){const type=$('reportType').value,today=new Date().toISOString().slice(0,10),now=new Date(),y=now.getFullYear(),m=now.getMonth()+1,ms=`<select id="reportMonth">${MONTHS.map(x=>`<option value="${x.n}" ${x.n===m?'selected':''}>${x.name}</option>`).join('')}</select>`;$('reportDynamicInputs').innerHTML=type==='daily'?`<label>Start Date<input id="reportStartDate" type="date" value="${today}"></label><label>End Date<input id="reportEndDate" type="date" value="${today}"></label>`:type==='weekly'?`<label>Week<select id="reportWeek"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label><label>Month${ms}</label><label>Year<input id="reportYear" type="number" value="${y}"></label>`:`<label>Month${ms}</label><label>Year<input id="reportYear" type="number" value="${y}"></label>`}
-async function loadReport(){if(!ensureClient())return;const r=getRange();if(!r)return;let q=state.client.from('sales').select('*').eq('status','ACTIVE').gte('sale_date',r.startDate).lte('sale_date',r.endDate).order('sale_date',{ascending:true});const sku=cleanText($('reportSkuFilter').value),loc=cleanText($('reportLocationFilter').value);if(sku)q=q.ilike('sku',sku);if(loc)q=q.ilike('location',loc);const{data,error}=await q;if(error)return showMessage(error.message,'err');buildReport(data||[]);showMessage('Report loaded.','ok')}
-function buildReport(rows){state.reportRows=rows;const pm=new Map(),cm=new Map(),dm=new Map();let tq=0,ta=0;rows.forEach(r=>{const q=numberValue(r.qty),a=numberValue(r.total_price),p=r.product_name||'Unknown',c=r.channel||'Unknown',d=r.sale_date||'Unknown';tq+=q;ta+=a;sum(pm,p,{product_name:p,qty:0,amount:0},q,a);sum(cm,c,{channel:c,qty:0,amount:0,transactions:0},q,a,true);sum(dm,d,{label:d,qty:0,amount:0},q,a)});state.reportProductSummary=[...pm.values()].sort((a,b)=>b.amount-a.amount);state.reportChannelSummary=[...cm.values()].sort((a,b)=>b.amount-a.amount);state.reportTimeSeries=[...dm.values()].sort((a,b)=>String(a.label).localeCompare(String(b.label)));$('kpiQty').textContent=formatNumber(tq);$('kpiAmount').textContent=formatCurrency(ta);$('kpiTransactions').textContent=formatNumber(rows.length);$('kpiTopProduct').textContent=state.reportProductSummary[0]?.product_name||'-';renderTable('productSummaryTable',state.reportProductSummary,columns.productSummary);renderTable('channelSummaryTable',state.reportChannelSummary,columns.channelSummary);drawChart('trendChart',state.reportTimeSeries)}
-function sum(m,k,i,q,a,c=false){if(!m.has(k))m.set(k,i);const x=m.get(k);x.qty+=q;x.amount+=a;if(c)x.transactions+=1}
-function getRange(){const t=$('reportType').value;if(t==='daily'){const s=$('reportStartDate').value,e=$('reportEndDate').value;if(!s||!e||s>e){showMessage('Invalid date range.','err');return null}return{startDate:s,endDate:e}}const m=Number($('reportMonth').value),y=Number($('reportYear').value);if(t==='monthly')return{startDate:fd(y,m,1),endDate:fd(y,m,new Date(y,m,0).getDate())};const w=Number($('reportWeek').value),sd=(w-1)*7+1,ed=w===5?new Date(y,m,0).getDate():w*7;return{startDate:fd(y,m,sd),endDate:fd(y,m,ed)}}
-function fd(y,m,d){return`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
-function renderTable(id,rows,cols){const el=$(id);if(!rows||!rows.length){el.innerHTML='<div class="empty-state">No data to show.</div>';return}el.innerHTML=`<table><thead><tr>${cols.map(c=>`<th>${escapeHtml(label(c))}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>{const v=c==='action'&&id==='draftTable'?r.action:c==='action'?r:r[c];return`<td>${cell(v,c)}</td>`}).join('')}</tr>`).join('')}</tbody></table>`}
-function drawChart(id,data){const el=$(id);if(!data.length){el.innerHTML='<div class="empty-state">No report data.</div>';return}const W=980,H=390,p={t:24,r:44,b:72,l:76},pw=W-p.l-p.r,ph=H-p.t-p.b,maxA=Math.max(...data.map(x=>numberValue(x.amount)),1),maxQ=Math.max(...data.map(x=>numberValue(x.qty)),1),step=pw/Math.max(data.length,1),bar=Math.min(64,Math.max(22,step*.52)),x=i=>p.l+step*i+step/2,ya=v=>p.t+ph-numberValue(v)/maxA*ph,yq=v=>p.t+ph-numberValue(v)/maxQ*ph,esc=v=>escapeHtml(String(v));const grid=[0,.25,.5,.75,1].map(t=>{const y=p.t+ph-t*ph;return`<line x1="${p.l}" y1="${y}" x2="${W-p.r}" y2="${y}" class="grid-line"></line><text x="${p.l-12}" y="${y+4}" text-anchor="end">${esc(formatCurrency(maxA*t).replace('IDR ',''))}</text>`}).join('');const bars=data.map((d,i)=>{const h=p.t+ph-ya(d.amount),xx=x(i)-bar/2,yy=ya(d.amount);return`<rect x="${xx}" y="${yy}" width="${bar}" height="${h}" rx="8"><title>${esc(d.label)} Amount: ${esc(formatCurrency(d.amount))}</title></rect>${h>24?`<text class="amount-label" x="${x(i)}" y="${yy-8}" text-anchor="middle">${esc(formatCurrency(d.amount).replace('IDR ',''))}</text>`:''}`}).join('');const points=data.map((d,i)=>`${x(i)},${yq(d.qty)}`).join(' '),dots=data.map((d,i)=>`<circle cx="${x(i)}" cy="${yq(d.qty)}" r="5"><title>${esc(d.label)} Qty: ${esc(formatNumber(d.qty))}</title></circle><text x="${x(i)+10}" y="${yq(d.qty)-8}">${esc(formatNumber(d.qty))}</text>`).join(''),labels=data.map((d,i)=>`<text x="${x(i)}" y="${H-34}" text-anchor="end" transform="rotate(-35 ${x(i)} ${H-34})">${esc(d.label)}</text>`).join('');el.innerHTML=`<svg class="combo-chart" viewBox="0 0 ${W} ${H}" role="img"><g>${grid}</g><line x1="${p.l}" y1="${p.t+ph}" x2="${W-p.r}" y2="${p.t+ph}" class="axis-line"></line><g class="amount-bars">${bars}</g><polyline class="qty-line" points="${points}"></polyline><g class="qty-dots">${dots}</g><g>${labels}</g></svg>`}
-function exportByType(t){if(t==='report'){const wb=XLSX.utils.book_new();sheet(wb,state.reportRows,'Raw Sales',columns.sales.filter(c=>c!=='action'));sheet(wb,state.reportProductSummary,'Product Summary',columns.productSummary);sheet(wb,state.reportChannelSummary,'Channel Summary',columns.channelSummary);sheet(wb,state.reportTimeSeries,'Trend',['label','qty','amount']);XLSX.writeFile(wb,`sales_report_${new Date().toISOString().slice(0,10)}.xlsx`);return}let rows=[],file='export.xlsx',cols=[];if(t==='sales'){rows=filterRows(state.sales,$('salesSearch').value);file='sales_export.xlsx';cols=columns.sales.filter(c=>c!=='action')}if(t==='stock'){rows=filterRows(state.stock,$('stockSearch').value);file='stock_export.xlsx';cols=columns.stock}if(t==='transfer'){rows=filterRows(state.transfers,$('transferSearch').value);file='transfer_stock_export.xlsx';cols=columns.transfer}if(t==='movements'){rows=filterRows(state.movements,$('movementSearch').value);file='stock_movements_export.xlsx';cols=columns.movement}if(!rows.length)return showMessage('No data available to export.','err');const wb=XLSX.utils.book_new();sheet(wb,rows,'Data',cols);XLSX.writeFile(wb,file)}
-function sheet(wb,rows,name,cols){XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows.map(r=>Object.fromEntries(cols.map(c=>[label(c),exportVal(r[c],c)])))),name)}
-function formObj(f){return Object.fromEntries(new FormData(f).entries())}function normalizeStock(p){return{location:cleanText(p.location),sku:cleanText(p.sku).toUpperCase(),product_name:cleanText(p.product_name),qty:numberValue(p.qty),price:numberValue(p.price),tier1_price:numberValue(p.tier1_price),tier2_price:numberValue(p.tier2_price),tier3_price:numberValue(p.tier3_price),cogs:numberValue(p.cogs)}}function normalizeTransfer(p){return{transfer_date:p.transfer_date,sku:cleanText(p.sku).toUpperCase(),product_name:cleanText(p.product_name),from_location:cleanText(p.from_location),to_location:cleanText(p.to_location),qty:numberValue(p.qty),remark:cleanText(p.remark)}}function addStockStatus(r){const q=numberValue(r.qty);return{...r,stock_status:q<=0?'Out of Stock':q<=5?'Low Stock':'Healthy'}}function filterRows(rows,s){const q=cleanText(s).toLowerCase();return q?rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q)):rows}function showTab(id,b){document.querySelectorAll('.tab-section').forEach(s=>s.classList.remove('active'));document.querySelectorAll('.tab-button').forEach(x=>x.classList.remove('active'));$(id).classList.add('active');b.classList.add('active')}function showMessage(t,type='ok'){$('messageBox').textContent=t;$('messageBox').className=`message ${type}`}function setLoading(v){document.body.classList.toggle('loading',v)}function ensureClient(){if(!state.client){showMessage('Supabase client is not ready.','err');return false}return true}function ensureReadyForWrite(){if(!ensureClient())return false;if(!state.user){showMessage('Please login first before saving data.','err');return false}return true}function findMatch(form){const sku=cleanText(form.querySelector('[name="sku"]')?.value).toUpperCase(),prod=cleanText(form.querySelector('[name="product_name"]')?.value).toLowerCase(),loc=cleanText(form.querySelector('[name="location"]')?.value)||cleanText(form.querySelector('[name="from_location"]')?.value),idx=state.stockIndex;return(loc&&sku&&idx.bySkuLocation[`${loc}||${sku}`])||(loc&&prod&&idx.byProductLocation[`${loc}||${prod}`])||(sku&&idx.bySku[sku])||(prod&&idx.byProduct[prod])||null}function priceFor(m,c){if(!m)return'';if(c==='Free Sample')return 0;if(c==='Tier 1')return m.tier1_price||0;if(c==='Tier 2')return m.tier2_price||0;if(c==='Tier 3')return m.tier3_price||0;return m.price||0}function syncSkuProduct(input){const f=input.closest('form');if(!f)return;const sku=f.querySelector('[name="sku"]'),prod=f.querySelector('[name="product_name"]'),cat=f.querySelector('[name="category"]'),chan=f.querySelector('[name="channel"]');if(cat&&chan&&['Tier 1','Tier 2','Tier 3'].includes(cat.value))chan.value='WA Order';if(cat&&cat.value==='Free Sample'&&f.querySelector('[name="order_number"]'))f.querySelector('[name="order_number"]').value='';if(sku)sku.value=cleanText(sku.value).toUpperCase();if(!sku||!prod)return;const m=findMatch(f);if(!m)return;if(input.name==='sku'||!prod.value)prod.value=m.product_name||prod.value;if(input.name==='product_name'||!sku.value)sku.value=m.sku||sku.value;if(cat&&f.querySelector('[name="price"]'))f.querySelector('[name="price"]').value=priceFor(m,cat.value);if(f.id==='stockForm'){['price','tier1_price','tier2_price','tier3_price','cogs'].forEach(k=>{if(f[k]&&m[k]!==undefined)f[k].value=m[k]})}}function cell(v,c){if(c==='stock_status'){const cls=v==='Out of Stock'?'badge badge-out':v==='Low Stock'?'badge badge-low':'badge badge-ok';return`<span class="${cls}">${escapeHtml(v)}</span>`}if(c==='status'){const s=v||'ACTIVE',cls=s==='REVOKED'?'status-revoked':'status-active';return`<span class="${cls}">${escapeHtml(s)}</span>`}if(c==='action'){if(typeof v==='number')return`<div class="draft-actions"><button class="icon-btn edit-line-btn" type="button" data-edit-line="${v}" title="Edit">✎</button><button class="icon-btn remove-line-btn" type="button" data-remove-line="${v}" title="Remove">×</button></div>`;const r=v||{};return(r.status||'ACTIVE')==='REVOKED'?'<span class="revoke-disabled">Revoked</span>':`<button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(r.id)}">Revoke</button>`}return escapeHtml(formatCell(v,c))}function formatCell(v,c){if(['price','tier1_price','tier2_price','tier3_price','discount','total_price','cogs','amount','line_total'].includes(c))return formatCurrency(v);if(['discount_value','qty','qty_change','transactions'].includes(c))return formatNumber(v);if(['created_at','updated_at','revoked_at'].includes(c)&&v)return formatDateTime(v);return v??''}function exportVal(v,c){if(['price','tier1_price','tier2_price','tier3_price','discount','total_price','cogs','amount','line_total','discount_value','qty','qty_change','transactions'].includes(c))return numberValue(v);if(['created_at','updated_at','revoked_at'].includes(c)&&v)return formatDateTime(v);return v??''}function formatNumber(v){return numberValue(v).toLocaleString('id-ID',{maximumFractionDigits:2})}function formatCurrency(v){return'IDR '+numberValue(v).toLocaleString('id-ID',{maximumFractionDigits:2})}function formatDateTime(v){const d=new Date(v);return Number.isNaN(d.getTime())?v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`}function cleanText(v){return String(v||'').trim()}function numberValue(v){const n=Number(v||0);return Number.isFinite(n)?n:0}function label(v){return String(v).replaceAll('_',' ')}function escapeHtml(v){return String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
+// =========================================================
+// Sales & Stock Control - app.js
+// Clean stable version for current HTML using data-dd dropdowns
+// =========================================================
+
+// Read Supabase config generated by GitHub Actions.
+const APP_CONFIG = window.APP_CONFIG || {};
+
+// Static master data used by dropdowns.
+const MASTER_OPTIONS = {
+  category: ['Online', 'Offline', 'Free Sample', 'Tier 1', 'Tier 2', 'Tier 3'],
+  channel: ['Shopee', 'Tokopedia', 'WA Order', 'Conference'],
+  location: [
+    'Apartemen Surabaya',
+    'Mavelyn',
+    'Gudang Jemursari',
+    'Gudang Riverside',
+    'Gibeon',
+    'Petra',
+    'LilinKecil',
+    'Insight Unlimited'
+  ]
+};
+
+// Month list used by weekly/monthly report filters.
+const MONTHS = [
+  { n: 1, name: 'January' },
+  { n: 2, name: 'February' },
+  { n: 3, name: 'March' },
+  { n: 4, name: 'April' },
+  { n: 5, name: 'May' },
+  { n: 6, name: 'June' },
+  { n: 7, name: 'July' },
+  { n: 8, name: 'August' },
+  { n: 9, name: 'September' },
+  { n: 10, name: 'October' },
+  { n: 11, name: 'November' },
+  { n: 12, name: 'December' }
+];
+
+// Application state kept in memory.
+const state = {
+  client: null,
+  user: null,
+  sales: [],
+  stock: [],
+  transfers: [],
+  movements: [],
+  draftLines: [],
+  editLineIndex: null,
+  reportRows: [],
+  reportProductSummary: [],
+  reportChannelSummary: [],
+  reportTimeSeries: [],
+  stockIndex: {
+    allProducts: [],
+    availableProducts: [],
+    allSkus: [],
+    availableSkus: [],
+    bySku: {},
+    byProduct: {},
+    bySkuLocation: {},
+    byProductLocation: {},
+    availableSkusByLocation: {},
+    availableProductsByLocation: {}
+  }
+};
+
+// Table column definitions.
+const columns = {
+  sales: [
+    'status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel',
+    'order_number', 'sku', 'product_name', 'qty', 'price', 'discount_type',
+    'discount_value', 'discount', 'total_price', 'remark'
+  ],
+  stock: [
+    'stock_status', 'location', 'sku', 'product_name', 'qty', 'price',
+    'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at'
+  ],
+  transfer: [
+    'transfer_date', 'created_by', 'sku', 'product_name', 'from_location',
+    'to_location', 'qty', 'remark'
+  ],
+  movement: [
+    'created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name',
+    'qty_change', 'reference_type', 'reference_key', 'remark'
+  ],
+  draft: ['action', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'line_total'],
+  productSummary: ['product_name', 'qty', 'amount'],
+  channelSummary: ['channel', 'qty', 'amount', 'transactions']
+};
+
+// Short helper to get DOM element by id.
+const $ = (id) => document.getElementById(id);
+
+// Bootstrap app when DOM is ready.
+document.addEventListener('DOMContentLoaded', async () => {
+  init();
+  setDefaultDates();
+  bindEvents();
+  renderReportInputs();
+  renderDraftTable();
+  initDropdowns();
+  await loadUser();
+  await refreshAll();
+});
+
+// Initialize Supabase client.
+function init() {
+  if (!APP_CONFIG.SUPABASE_URL || !APP_CONFIG.SUPABASE_ANON_KEY) {
+    $('userEmail').textContent = 'Supabase config missing';
+    showMessage('Missing Supabase config. Check assets/config.js and GitHub Secrets.', 'err');
+    return;
+  }
+
+  state.client = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);
+}
+
+// Bind all user interactions.
+function bindEvents() {
+  document.querySelectorAll('.tab-button').forEach((button) => {
+    button.onclick = () => showTab(button.dataset.tab, button);
+  });
+
+  $('loginButton').onclick = signInWithGoogle;
+  $('logoutButton').onclick = signOut;
+  $('refreshButton').onclick = refreshAll;
+
+  $('addLineButton').onclick = addDraftLine;
+  $('submitOrderButton').onclick = submitSalesOrder;
+
+  $('stockForm').onsubmit = submitStock;
+  $('transferForm').onsubmit = submitTransfer;
+
+  $('reportType').onchange = renderReportInputs;
+  $('loadReportButton').onclick = loadReport;
+
+  document.querySelectorAll('[data-export]').forEach((button) => {
+    button.onclick = () => exportByType(button.dataset.export);
+  });
+
+  ['salesSearch', 'stockSearch', 'transferSearch', 'movementSearch'].forEach((id) => {
+    $(id).addEventListener('input', renderMainTables);
+  });
+
+  document.addEventListener('click', handleTableActions);
+
+  const categoryInput = document.querySelector('[name="category"]');
+  if (categoryInput) {
+    categoryInput.addEventListener('change', (event) => {
+      const channelInput = document.querySelector('[name="channel"]');
+      const orderInput = document.querySelector('[name="order_number"]');
+
+      if (['Tier 1', 'Tier 2', 'Tier 3'].includes(event.target.value) && channelInput) {
+        channelInput.value = 'WA Order';
+      }
+
+      if (event.target.value === 'Free Sample' && orderInput) {
+        orderInput.value = '';
+      }
+
+      syncSkuProduct(event.target);
+    });
+  }
+
+  document.querySelectorAll('[name="sku"], [name="order_number"]').forEach((input) => {
+    input.addEventListener('input', () => {
+      const position = input.selectionStart;
+      input.value = input.value.toUpperCase();
+      input.setSelectionRange(position, position);
+    });
+  });
+}
+
+// Set date fields to today's date.
+function setDefaultDates() {
+  const today = new Date().toISOString().slice(0, 10);
+  document.querySelectorAll('input[type="date"]').forEach((input) => {
+    input.value = today;
+  });
+}
+
+// Start Google login through Supabase Auth.
+async function signInWithGoogle() {
+  if (!ensureClient()) return;
+
+  const { error } = await state.client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: location.href.split('#')[0]
+    }
+  });
+
+  if (error) showMessage(error.message, 'err');
+}
+
+// Sign user out.
+async function signOut() {
+  if (!ensureClient()) return;
+
+  await state.client.auth.signOut();
+  state.user = null;
+  updateUserDisplay();
+  showMessage('Signed out successfully.', 'ok');
+}
+
+// Load current authenticated user.
+async function loadUser() {
+  if (!state.client) {
+    $('userEmail').textContent = 'Not connected';
+    return;
+  }
+
+  const { data, error } = await state.client.auth.getUser();
+
+  if (error) {
+    $('userEmail').textContent = 'Session check failed';
+    showMessage(error.message, 'err');
+    return;
+  }
+
+  state.user = data.user || null;
+  updateUserDisplay();
+}
+
+// Display user email or login status.
+function updateUserDisplay() {
+  $('userEmail').textContent = state.user?.email || 'Not signed in';
+}
+
+// Refresh all main tables from Supabase.
+async function refreshAll() {
+  if (!ensureClient()) return;
+
+  setLoading(true);
+  await loadUser();
+
+  const results = await Promise.all([
+    fetchAllRows('sales', 'created_at', false),
+    fetchAllRows('stock', 'location', true),
+    fetchAllRows('transfer_stock', 'created_at', false),
+    fetchAllRows('stock_movements', 'created_at', false)
+  ]);
+
+  setLoading(false);
+
+  for (const result of results) {
+    if (result.error) {
+      return showMessage(result.error.message, 'err');
+    }
+  }
+
+  state.sales = results[0].data || [];
+  state.stock = (results[1].data || [])
+    .map(addStockStatus)
+    .sort((a, b) => String(a.location).localeCompare(String(b.location)) || String(a.sku).localeCompare(String(b.sku)));
+  state.transfers = results[2].data || [];
+  state.movements = results[3].data || [];
+
+  buildStockIndex(state.stock);
+  renderMainTables();
+  showMessage('Data refreshed.', 'ok');
+}
+
+// Fetch all rows with simple pagination.
+async function fetchAllRows(tableName, orderColumn, ascending = true) {
+  let allRows = [];
+  let from = 0;
+  const batchSize = 1000;
+
+  while (true) {
+    const result = await state.client
+      .from(tableName)
+      .select('*')
+      .order(orderColumn, { ascending })
+      .range(from, from + batchSize - 1);
+
+    if (result.error) {
+      return { data: allRows, error: result.error };
+    }
+
+    allRows = allRows.concat(result.data || []);
+
+    if (!result.data || result.data.length < batchSize) break;
+
+    from += batchSize;
+  }
+
+  return { data: allRows, error: null };
+}
+
+// Build searchable stock index for dropdown and auto-fill.
+function buildStockIndex(rows) {
+  const allProducts = new Set();
+  const availableProducts = new Set();
+  const allSkus = new Set();
+  const availableSkus = new Set();
+
+  const bySku = {};
+  const byProduct = {};
+  const bySkuLocation = {};
+  const byProductLocation = {};
+  const skusByLocation = {};
+  const productsByLocation = {};
+
+  rows.forEach((row) => {
+    const sku = cleanText(row.sku).toUpperCase();
+    const product = cleanText(row.product_name);
+    const location = cleanText(row.location);
+    const qty = numberValue(row.qty);
+
+    if (!sku && !product) return;
+
+    const record = {
+      sku,
+      product_name: product,
+      location,
+      qty,
+      price: numberValue(row.price),
+      tier1_price: numberValue(row.tier1_price),
+      tier2_price: numberValue(row.tier2_price),
+      tier3_price: numberValue(row.tier3_price),
+      cogs: numberValue(row.cogs)
+    };
+
+    if (sku) {
+      allSkus.add(sku);
+      bySku[sku] ??= record;
+      if (location) bySkuLocation[`${location}||${sku}`] = record;
+    }
+
+    if (product) {
+      allProducts.add(product);
+      byProduct[product.toLowerCase()] ??= record;
+      if (location) byProductLocation[`${location}||${product.toLowerCase()}`] = record;
+    }
+
+    if (qty > 0) {
+      if (sku) availableSkus.add(sku);
+      if (product) availableProducts.add(product);
+
+      if (location) {
+        skusByLocation[location] ??= new Set();
+        productsByLocation[location] ??= new Set();
+        if (sku) skusByLocation[location].add(sku);
+        if (product) productsByLocation[location].add(product);
+      }
+    }
+  });
+
+  state.stockIndex = {
+    allProducts: [...allProducts].sort(),
+    availableProducts: [...availableProducts].sort(),
+    allSkus: [...allSkus].sort(),
+    availableSkus: [...availableSkus].sort(),
+    bySku,
+    byProduct,
+    bySkuLocation,
+    byProductLocation,
+    availableSkusByLocation: setMapToObject(skusByLocation),
+    availableProductsByLocation: setMapToObject(productsByLocation)
+  };
+}
+
+// Initialize dropdowns for inputs using data-dd.
+function initDropdowns() {
+  document.querySelectorAll('[data-dd]').forEach((input) => {
+    if (input.dataset.ready) return;
+
+    input.dataset.ready = '1';
+
+    const panel = document.createElement('div');
+    panel.className = 'dropdown-panel';
+    panel.hidden = true;
+    document.body.appendChild(panel);
+
+    input._panel = panel;
+
+    input.addEventListener('focus', () => renderDropdown(input));
+    input.addEventListener('input', () => renderDropdown(input));
+    input.addEventListener('change', () => syncSkuProduct(input));
+
+    window.addEventListener('scroll', () => {
+      if (!panel.hidden) positionDropdown(input);
+    }, true);
+
+    window.addEventListener('resize', () => {
+      if (!panel.hidden) positionDropdown(input);
+    });
+
+    document.addEventListener('pointerdown', (event) => {
+      if (event.target !== input && !panel.contains(event.target)) {
+        panel.hidden = true;
+      }
+    });
+  });
+}
+
+// Position dropdown directly below input.
+function positionDropdown(input) {
+  const panel = input._panel;
+  if (!panel) return;
+
+  const rect = input.getBoundingClientRect();
+  const viewportWidth = window.visualViewport?.width || window.innerWidth;
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+
+  if (viewportWidth <= 700) {
+    panel.classList.add('mobile-mode');
+    return;
+  }
+
+  panel.classList.remove('mobile-mode');
+
+  panel.style.left = `${Math.max(8, Math.min(rect.left, viewportWidth - rect.width - 8))}px`;
+  panel.style.top = `${rect.bottom + 4}px`;
+  panel.style.width = `${Math.max(rect.width, 180)}px`;
+  panel.style.maxHeight = `${Math.max(140, viewportHeight - rect.bottom - 16)}px`;
+}
+
+// Resolve dropdown options based on data-dd type.
+function dropdownOptions(input) {
+  const type = input.dataset.dd;
+  const index = state.stockIndex;
+
+  if (type === 'category') return MASTER_OPTIONS.category;
+  if (type === 'channel') return MASTER_OPTIONS.channel;
+  if (type === 'location') return MASTER_OPTIONS.location;
+
+  if (type === 'sku-stock') return index.allSkus;
+  if (type === 'product-stock' || type === 'product-report') return index.allProducts;
+
+  const form = input.closest('form');
+  const location = cleanText(form?.querySelector('[name="location"]')?.value);
+  const fromLocation = cleanText(form?.querySelector('[name="from_location"]')?.value);
+
+  if (type === 'sku-sale' || type === 'sku-report') {
+    return location && index.availableSkusByLocation[location]
+      ? index.availableSkusByLocation[location]
+      : index.availableSkus;
+  }
+
+  if (type === 'product-sale') {
+    return location && index.availableProductsByLocation[location]
+      ? index.availableProductsByLocation[location]
+      : index.availableProducts;
+  }
+
+  if (type === 'sku-transfer') {
+    return fromLocation && index.availableSkusByLocation[fromLocation]
+      ? index.availableSkusByLocation[fromLocation]
+      : index.availableSkus;
+  }
+
+  if (type === 'product-transfer') {
+    return fromLocation && index.availableProductsByLocation[fromLocation]
+      ? index.availableProductsByLocation[fromLocation]
+      : index.availableProducts;
+  }
+
+  return [];
+}
+
+// Render dropdown panel content.
+function renderDropdown(input) {
+  const panel = input._panel;
+  if (!panel) return;
+
+  const query = cleanText(input.value).toLowerCase();
+  const options = dropdownOptions(input)
+    .filter((option) => String(option).toLowerCase().includes(query))
+    .slice(0, 40);
+
+  panel.innerHTML = options.length
+    ? options.map((option) => `<button type="button" class="dropdown-option">${escapeHtml(option)}</button>`).join('')
+    : '<div class="dropdown-empty">No matching option</div>';
+
+  panel.querySelectorAll('button').forEach((button) => {
+    button.onclick = () => {
+      input.value = button.textContent;
+      panel.hidden = true;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+  });
+
+  panel.hidden = false;
+  positionDropdown(input);
+}
+
+// Add or update draft sales line.
+function addDraftLine() {
+  const form = $('salesForm');
+
+  const line = {
+    sku: cleanText(form.sku.value).toUpperCase(),
+    product_name: cleanText(form.product_name.value),
+    qty: numberValue(form.qty.value),
+    price: numberValue(form.price.value),
+    discount_type: cleanText(form.discount_type.value) || 'AMOUNT',
+    discount_value: numberValue(form.discount_value.value),
+    remark: cleanText(form.remark.value)
+  };
+
+  if (!line.sku || !line.product_name || line.qty <= 0) {
+    return showMessage('Please fill SKU, Product Name, and Qty correctly.', 'err');
+  }
+
+  const editIndex = Number.isInteger(state.editLineIndex) ? state.editLineIndex : null;
+  const isDuplicateSku = state.draftLines.some((existingLine, index) => existingLine.sku === line.sku && index !== editIndex);
+
+  if (isDuplicateSku) {
+    return showMessage('Duplicate SKU in draft.', 'err');
+  }
+
+  line.line_total = calculateLineTotal(line);
+
+  if (editIndex !== null && state.draftLines[editIndex]) {
+    state.draftLines[editIndex] = line;
+    state.editLineIndex = null;
+    $('addLineButton').textContent = 'Add Product to Draft';
+    showMessage('Draft line updated.', 'ok');
+  } else {
+    state.draftLines.push(line);
+    showMessage('Product added to draft.', 'ok');
+  }
+
+  ['sku', 'product_name', 'qty', 'price', 'discount_value', 'remark'].forEach((name) => {
+    if (form[name]) {
+      form[name].value = name === 'qty' ? 1 : name === 'discount_value' ? 0 : '';
+    }
+  });
+
+  renderDraftTable();
+}
+
+// Load draft line back into form for editing.
+function editDraftLine(index) {
+  const line = state.draftLines[index];
+  const form = $('salesForm');
+
+  if (!line) return;
+
+  form.sku.value = line.sku;
+  form.product_name.value = line.product_name;
+  form.qty.value = line.qty;
+  form.price.value = line.price;
+  form.discount_type.value = line.discount_type;
+  form.discount_value.value = line.discount_value;
+  form.remark.value = line.remark || '';
+
+  state.editLineIndex = index;
+  $('addLineButton').textContent = 'Update Draft Line';
+  form.sku.focus();
+  showMessage('Draft line loaded for editing.', 'ok');
+}
+
+// Remove draft line.
+function removeDraftLine(index) {
+  state.draftLines.splice(index, 1);
+
+  if (state.editLineIndex === index) {
+    state.editLineIndex = null;
+    $('addLineButton').textContent = 'Add Product to Draft';
+  }
+
+  renderDraftTable();
+  showMessage('Draft line removed.', 'ok');
+}
+
+// Render draft order lines.
+function renderDraftTable() {
+  renderTable('draftTable', state.draftLines.map((line, index) => ({ ...line, action: index })), columns.draft);
+
+  $('draftSummaryText').textContent = state.draftLines.length
+    ? `${state.draftLines.length} line(s), total ${formatCurrency(state.draftLines.reduce((sum, line) => sum + line.line_total, 0))}`
+    : 'No draft lines yet.';
+}
+
+// Calculate net line total.
+function calculateLineTotal(line) {
+  const gross = line.qty * line.price;
+  const discount = line.discount_type === 'PERCENT'
+    ? gross * line.discount_value / 100
+    : line.discount_value;
+
+  return gross - discount;
+}
+
+// Submit full sales order through RPC.
+async function submitSalesOrder() {
+  if (!ensureReadyForWrite()) return;
+
+  if (!state.draftLines.length) {
+    return showMessage('Please add at least one product first.', 'err');
+  }
+
+  const form = $('salesForm');
+  const header = {
+    sale_date: form.sale_date.value,
+    location: cleanText(form.location.value),
+    category: cleanText(form.category.value),
+    channel: cleanText(form.channel.value),
+    order_number: cleanText(form.order_number.value).toUpperCase()
+  };
+
+  if (['Tier 1', 'Tier 2', 'Tier 3'].includes(header.category)) {
+    header.channel = 'WA Order';
+  }
+
+  if (header.category === 'Free Sample') {
+    header.order_number = '';
+  }
+
+  if (header.category !== 'Free Sample' && !header.order_number) {
+    return showMessage('Order / Invoice Number is required except for Free Sample.', 'err');
+  }
+
+  const { error } = await state.client.rpc('add_sales_order', {
+    p_header: header,
+    p_lines: state.draftLines
+  });
+
+  if (error) return showMessage(error.message, 'err');
+
+  state.draftLines = [];
+  state.editLineIndex = null;
+  renderDraftTable();
+  showMessage('Full order submitted successfully.', 'ok');
+  await refreshAll();
+}
+
+// Submit stock form through RPC.
+async function submitStock(event) {
+  event.preventDefault();
+  if (!ensureReadyForWrite()) return;
+
+  const payload = normalizeStock(formObject(event.target));
+
+  const { error } = await state.client.rpc('upsert_stock_item', {
+    p_location: payload.location,
+    p_sku: payload.sku,
+    p_product_name: payload.product_name,
+    p_qty: payload.qty,
+    p_price: payload.price,
+    p_tier1_price: payload.tier1_price,
+    p_tier2_price: payload.tier2_price,
+    p_tier3_price: payload.tier3_price,
+    p_cogs: payload.cogs
+  });
+
+  if (error) return showMessage(error.message, 'err');
+
+  event.target.reset();
+  showMessage('Stock saved.', 'ok');
+  await refreshAll();
+}
+
+// Submit transfer form through RPC.
+async function submitTransfer(event) {
+  event.preventDefault();
+  if (!ensureReadyForWrite()) return;
+
+  const payload = normalizeTransfer(formObject(event.target));
+
+  const { error } = await state.client.rpc('transfer_stock_transaction', {
+    p_transfer_date: payload.transfer_date,
+    p_sku: payload.sku,
+    p_product_name: payload.product_name,
+    p_from_location: payload.from_location,
+    p_to_location: payload.to_location,
+    p_qty: payload.qty,
+    p_remark: payload.remark
+  });
+
+  if (error) return showMessage(error.message, 'err');
+
+  event.target.reset();
+  setDefaultDates();
+  showMessage('Transfer saved.', 'ok');
+  await refreshAll();
+}
+
+// Revoke sales transaction.
+async function revokeSale(id) {
+  if (!ensureReadyForWrite()) return;
+
+  const reason = prompt('Reason for revoke?');
+  if (reason === null) return;
+
+  if (!cleanText(reason)) {
+    return showMessage('Revoke reason is required.', 'err');
+  }
+
+  const { error } = await state.client.rpc('revoke_sales_transaction', {
+    p_sales_id: id,
+    p_revoke_reason: cleanText(reason)
+  });
+
+  if (error) return showMessage(error.message, 'err');
+
+  showMessage('Sales revoked and stock returned.', 'ok');
+  await refreshAll();
+}
+
+// Handle dynamic table buttons.
+function handleTableActions(event) {
+  const editButton = event.target.closest('[data-edit-line]');
+  const deleteButton = event.target.closest('[data-remove-line]');
+  const revokeButton = event.target.closest('[data-revoke-sales-id]');
+
+  if (editButton) editDraftLine(Number(editButton.dataset.editLine));
+  if (deleteButton) removeDraftLine(Number(deleteButton.dataset.removeLine));
+  if (revokeButton) revokeSale(revokeButton.dataset.revokeSalesId);
+}
+
+// Render all main data tables.
+function renderMainTables() {
+  const salesRows = filterRows(state.sales, $('salesSearch').value);
+
+  renderTable('salesTable', salesRows, columns.sales);
+  renderTable('stockTable', filterRows(state.stock, $('stockSearch').value), columns.stock);
+  renderTable('transferTable', filterRows(state.transfers, $('transferSearch').value), columns.transfer);
+  renderTable('movementTable', filterRows(state.movements, $('movementSearch').value), columns.movement);
+
+  $('salesCountText').textContent = `Showing ${salesRows.length.toLocaleString()} of ${state.sales.length.toLocaleString()} loaded transactions.`;
+}
+
+// Render report date inputs based on report type.
+function renderReportInputs() {
+  const type = $('reportType').value;
+  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+
+  const monthSelect = `<select id="reportMonth">${MONTHS.map((item) => `<option value="${item.n}" ${item.n === month ? 'selected' : ''}>${item.name}</option>`).join('')}</select>`;
+
+  if (type === 'daily') {
+    $('reportDynamicInputs').innerHTML = `
+      <label>Start Date<input id="reportStartDate" type="date" value="${today}"></label>
+      <label>End Date<input id="reportEndDate" type="date" value="${today}"></label>
+    `;
+    return;
+  }
+
+  if (type === 'weekly') {
+    $('reportDynamicInputs').innerHTML = `
+      <label>Week<select id="reportWeek"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+      <label>Month${monthSelect}</label>
+      <label>Year<input id="reportYear" type="number" value="${year}"></label>
+    `;
+    return;
+  }
+
+  $('reportDynamicInputs').innerHTML = `
+    <label>Month${monthSelect}</label>
+    <label>Year<input id="reportYear" type="number" value="${year}"></label>
+  `;
+}
+
+// Load report data from Supabase.
+async function loadReport() {
+  if (!ensureClient()) return;
+
+  const range = getRange();
+  if (!range) return;
+
+  let query = state.client
+    .from('sales')
+    .select('*')
+    .eq('status', 'ACTIVE')
+    .gte('sale_date', range.startDate)
+    .lte('sale_date', range.endDate)
+    .order('sale_date', { ascending: true });
+
+  const productInput = $('reportProductFilter');
+  const skuInput = $('reportSkuFilter');
+  const locationInput = $('reportLocationFilter');
+
+  const product = cleanText(productInput?.value);
+  const sku = cleanText(skuInput?.value);
+  const location = cleanText(locationInput?.value);
+
+  if (product) query = query.ilike('product_name', `%${product}%`);
+  if (sku) query = query.ilike('sku', `%${sku}%`);
+  if (location) query = query.ilike('location', `%${location}%`);
+
+  const { data, error } = await query;
+
+  if (error) return showMessage(error.message, 'err');
+
+  buildReport(data || []);
+  showMessage('Report loaded.', 'ok');
+}
+
+// Build report summaries and chart.
+function buildReport(rows) {
+  state.reportRows = rows;
+
+  const productMap = new Map();
+  const channelMap = new Map();
+  const dateMap = new Map();
+
+  let totalQty = 0;
+  let totalAmount = 0;
+
+  rows.forEach((row) => {
+    const qty = numberValue(row.qty);
+    const amount = numberValue(row.total_price);
+    const product = row.product_name || 'Unknown';
+    const channel = row.channel || 'Unknown';
+    const date = row.sale_date || 'Unknown';
+
+    totalQty += qty;
+    totalAmount += amount;
+
+    addSummary(productMap, product, { product_name: product, qty: 0, amount: 0 }, qty, amount);
+    addSummary(channelMap, channel, { channel, qty: 0, amount: 0, transactions: 0 }, qty, amount, true);
+    addSummary(dateMap, date, { label: date, qty: 0, amount: 0 }, qty, amount);
+  });
+
+  state.reportProductSummary = [...productMap.values()].sort((a, b) => b.amount - a.amount);
+  state.reportChannelSummary = [...channelMap.values()].sort((a, b) => b.amount - a.amount);
+  state.reportTimeSeries = [...dateMap.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
+
+  $('kpiQty').textContent = formatNumber(totalQty);
+  $('kpiAmount').textContent = formatCurrency(totalAmount);
+  $('kpiTransactions').textContent = formatNumber(rows.length);
+  $('kpiTopProduct').textContent = state.reportProductSummary[0]?.product_name || '-';
+
+  renderTable('productSummaryTable', state.reportProductSummary, columns.productSummary);
+  renderTable('channelSummaryTable', state.reportChannelSummary, columns.channelSummary);
+  drawChart('trendChart', state.reportTimeSeries);
+}
+
+// Add values to a summary map.
+function addSummary(map, key, initialValue, qty, amount, countTransaction = false) {
+  if (!map.has(key)) map.set(key, initialValue);
+
+  const current = map.get(key);
+  current.qty += qty;
+  current.amount += amount;
+
+  if (countTransaction) current.transactions += 1;
+}
+
+// Resolve report date range.
+function getRange() {
+  const type = $('reportType').value;
+
+  if (type === 'daily') {
+    const startDate = $('reportStartDate').value;
+    const endDate = $('reportEndDate').value;
+
+    if (!startDate || !endDate || startDate > endDate) {
+      showMessage('Invalid date range.', 'err');
+      return null;
+    }
+
+    return { startDate, endDate };
+  }
+
+  const month = Number($('reportMonth').value);
+  const year = Number($('reportYear').value);
+
+  if (type === 'monthly') {
+    return {
+      startDate: formatDate(year, month, 1),
+      endDate: formatDate(year, month, new Date(year, month, 0).getDate())
+    };
+  }
+
+  const week = Number($('reportWeek').value);
+  const startDay = (week - 1) * 7 + 1;
+  const endDay = week === 5 ? new Date(year, month, 0).getDate() : week * 7;
+
+  return {
+    startDate: formatDate(year, month, startDay),
+    endDate: formatDate(year, month, endDay)
+  };
+}
+
+// Format date to yyyy-mm-dd.
+function formatDate(year, month, day) {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Generic table renderer.
+function renderTable(id, rows, tableColumns) {
+  const element = $(id);
+
+  if (!rows || !rows.length) {
+    element.innerHTML = '<div class="empty-state">No data to show.</div>';
+    return;
+  }
+
+  element.innerHTML = `
+    <table>
+      <thead>
+        <tr>${tableColumns.map((column) => `<th>${escapeHtml(label(column))}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            ${tableColumns.map((column) => {
+              const value = column === 'action' && id === 'draftTable'
+                ? row.action
+                : column === 'action'
+                  ? row
+                  : row[column];
+
+              return `<td>${cell(value, column)}</td>`;
+            }).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+// Draw report combo chart.
+function drawChart(id, data) {
+  const element = $(id);
+
+  if (!data.length) {
+    element.innerHTML = '<div class="empty-state">No report data.</div>';
+    return;
+  }
+
+  const width = 980;
+  const height = 390;
+  const padding = { top: 24, right: 44, bottom: 72, left: 76 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+
+  const maxAmount = Math.max(...data.map((item) => numberValue(item.amount)), 1);
+  const maxQty = Math.max(...data.map((item) => numberValue(item.qty)), 1);
+
+  const step = plotWidth / Math.max(data.length, 1);
+  const barWidth = Math.min(64, Math.max(22, step * 0.52));
+
+  const x = (index) => padding.left + step * index + step / 2;
+  const yAmount = (value) => padding.top + plotHeight - numberValue(value) / maxAmount * plotHeight;
+  const yQty = (value) => padding.top + plotHeight - numberValue(value) / maxQty * plotHeight;
+  const safe = (value) => escapeHtml(String(value));
+
+  const grid = [0, 0.25, 0.5, 0.75, 1]
+    .map((ratio) => {
+      const y = padding.top + plotHeight - ratio * plotHeight;
+      return `
+        <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"></line>
+        <text x="${padding.left - 12}" y="${y + 4}" text-anchor="end">${safe(formatCurrency(maxAmount * ratio).replace('IDR ', ''))}</text>
+      `;
+    })
+    .join('');
+
+  const bars = data
+    .map((item, index) => {
+      const barHeight = padding.top + plotHeight - yAmount(item.amount);
+      const barX = x(index) - barWidth / 2;
+      const barY = yAmount(item.amount);
+
+      return `
+        <rect x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="8">
+          <title>${safe(item.label)} Amount: ${safe(formatCurrency(item.amount))}</title>
+        </rect>
+      `;
+    })
+    .join('');
+
+  const linePoints = data.map((item, index) => `${x(index)},${yQty(item.qty)}`).join(' ');
+
+  const dots = data
+    .map((item, index) => `
+      <circle cx="${x(index)}" cy="${yQty(item.qty)}" r="5">
+        <title>${safe(item.label)} Qty: ${safe(formatNumber(item.qty))}</title>
+      </circle>
+    `)
+    .join('');
+
+  const labels = data
+    .map((item, index) => `
+      <text x="${x(index)}" y="${height - 34}" text-anchor="end" transform="rotate(-35 ${x(index)} ${height - 34})">${safe(item.label)}</text>
+    `)
+    .join('');
+
+  element.innerHTML = `
+    <svg class="combo-chart" viewBox="0 0 ${width} ${height}" role="img">
+      <g>${grid}</g>
+      <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="axis-line"></line>
+      <g class="amount-bars">${bars}</g>
+      <polyline class="qty-line" points="${linePoints}"></polyline>
+      <g class="qty-dots">${dots}</g>
+      <g>${labels}</g>
+    </svg>
+  `;
+}
+
+// Export tables/reports to XLSX.
+function exportByType(type) {
+  if (type === 'report') {
+    const workbook = XLSX.utils.book_new();
+    addSheet(workbook, state.reportRows, 'Raw Sales', columns.sales.filter((column) => column !== 'action'));
+    addSheet(workbook, state.reportProductSummary, 'Product Summary', columns.productSummary);
+    addSheet(workbook, state.reportChannelSummary, 'Channel Summary', columns.channelSummary);
+    addSheet(workbook, state.reportTimeSeries, 'Trend', ['label', 'qty', 'amount']);
+    XLSX.writeFile(workbook, `sales_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    return;
+  }
+
+  let rows = [];
+  let fileName = 'export.xlsx';
+  let tableColumns = [];
+
+  if (type === 'sales') {
+    rows = filterRows(state.sales, $('salesSearch').value);
+    fileName = 'sales_export.xlsx';
+    tableColumns = columns.sales.filter((column) => column !== 'action');
+  }
+
+  if (type === 'stock') {
+    rows = filterRows(state.stock, $('stockSearch').value);
+    fileName = 'stock_export.xlsx';
+    tableColumns = columns.stock;
+  }
+
+  if (type === 'transfer') {
+    rows = filterRows(state.transfers, $('transferSearch').value);
+    fileName = 'transfer_stock_export.xlsx';
+    tableColumns = columns.transfer;
+  }
+
+  if (type === 'movements') {
+    rows = filterRows(state.movements, $('movementSearch').value);
+    fileName = 'stock_movements_export.xlsx';
+    tableColumns = columns.movement;
+  }
+
+  if (!rows.length) {
+    return showMessage('No data available to export.', 'err');
+  }
+
+  const workbook = XLSX.utils.book_new();
+  addSheet(workbook, rows, 'Data', tableColumns);
+  XLSX.writeFile(workbook, fileName);
+}
+
+// Add sheet to workbook.
+function addSheet(workbook, rows, sheetName, tableColumns) {
+  const exportRows = rows.map((row) => {
+    return Object.fromEntries(
+      tableColumns.map((column) => [label(column), exportValue(row[column], column)])
+    );
+  });
+
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportRows), sheetName);
+}
+
+// Form helpers.
+function formObject(form) {
+  return Object.fromEntries(new FormData(form).entries());
+}
+
+function normalizeStock(payload) {
+  return {
+    location: cleanText(payload.location),
+    sku: cleanText(payload.sku).toUpperCase(),
+    product_name: cleanText(payload.product_name),
+    qty: numberValue(payload.qty),
+    price: numberValue(payload.price),
+    tier1_price: numberValue(payload.tier1_price),
+    tier2_price: numberValue(payload.tier2_price),
+    tier3_price: numberValue(payload.tier3_price),
+    cogs: numberValue(payload.cogs)
+  };
+}
+
+function normalizeTransfer(payload) {
+  return {
+    transfer_date: payload.transfer_date,
+    sku: cleanText(payload.sku).toUpperCase(),
+    product_name: cleanText(payload.product_name),
+    from_location: cleanText(payload.from_location),
+    to_location: cleanText(payload.to_location),
+    qty: numberValue(payload.qty),
+    remark: cleanText(payload.remark)
+  };
+}
+
+// Add stock status label.
+function addStockStatus(row) {
+  const qty = numberValue(row.qty);
+
+  return {
+    ...row,
+    stock_status: qty <= 0 ? 'Out of Stock' : qty <= 5 ? 'Low Stock' : 'Healthy'
+  };
+}
+
+// Filter rows by search text.
+function filterRows(rows, searchText) {
+  const query = cleanText(searchText).toLowerCase();
+  return query ? rows.filter((row) => JSON.stringify(row).toLowerCase().includes(query)) : rows;
+}
+
+// Show selected tab.
+function showTab(id, button) {
+  document.querySelectorAll('.tab-section').forEach((section) => section.classList.remove('active'));
+  document.querySelectorAll('.tab-button').forEach((tab) => tab.classList.remove('active'));
+
+  $(id).classList.add('active');
+  button.classList.add('active');
+}
+
+// Show message box.
+function showMessage(text, type = 'ok') {
+  $('messageBox').textContent = text;
+  $('messageBox').className = `message ${type}`;
+}
+
+// Toggle loading visual state.
+function setLoading(value) {
+  document.body.classList.toggle('loading', value);
+}
+
+// Ensure Supabase client exists.
+function ensureClient() {
+  if (!state.client) {
+    showMessage('Supabase client is not ready.', 'err');
+    return false;
+  }
+
+  return true;
+}
+
+// Ensure user is signed in before write actions.
+function ensureReadyForWrite() {
+  if (!ensureClient()) return false;
+
+  if (!state.user) {
+    showMessage('Please login first before saving data.', 'err');
+    return false;
+  }
+
+  return true;
+}
+
+// Find stock match for SKU/Product sync.
+function findMatch(form) {
+  const sku = cleanText(form.querySelector('[name="sku"]')?.value).toUpperCase();
+  const product = cleanText(form.querySelector('[name="product_name"]')?.value).toLowerCase();
+  const location = cleanText(form.querySelector('[name="location"]')?.value) || cleanText(form.querySelector('[name="from_location"]')?.value);
+  const index = state.stockIndex;
+
+  return (
+    (location && sku && index.bySkuLocation[`${location}||${sku}`]) ||
+    (location && product && index.byProductLocation[`${location}||${product}`]) ||
+    (sku && index.bySku[sku]) ||
+    (product && index.byProduct[product]) ||
+    null
+  );
+}
+
+// Resolve price by category.
+function priceFor(match, category) {
+  if (!match) return '';
+  if (category === 'Free Sample') return 0;
+  if (category === 'Tier 1') return match.tier1_price || 0;
+  if (category === 'Tier 2') return match.tier2_price || 0;
+  if (category === 'Tier 3') return match.tier3_price || 0;
+  return match.price || 0;
+}
+
+// Sync SKU/Product/Price from selected data.
+function syncSkuProduct(input) {
+  const form = input.closest('form');
+  if (!form) return;
+
+  const skuInput = form.querySelector('[name="sku"]');
+  const productInput = form.querySelector('[name="product_name"]');
+  const categoryInput = form.querySelector('[name="category"]');
+  const channelInput = form.querySelector('[name="channel"]');
+
+  if (categoryInput && channelInput && ['Tier 1', 'Tier 2', 'Tier 3'].includes(categoryInput.value)) {
+    channelInput.value = 'WA Order';
+  }
+
+  if (categoryInput && categoryInput.value === 'Free Sample' && form.querySelector('[name="order_number"]')) {
+    form.querySelector('[name="order_number"]').value = '';
+  }
+
+  if (skuInput) skuInput.value = cleanText(skuInput.value).toUpperCase();
+  if (!skuInput || !productInput) return;
+
+  const match = findMatch(form);
+  if (!match) return;
+
+  if (input.name === 'sku' || !productInput.value) {
+    productInput.value = match.product_name || productInput.value;
+  }
+
+  if (input.name === 'product_name' || !skuInput.value) {
+    skuInput.value = match.sku || skuInput.value;
+  }
+
+  if (categoryInput && form.querySelector('[name="price"]')) {
+    form.querySelector('[name="price"]').value = priceFor(match, categoryInput.value);
+  }
+
+  if (form.id === 'stockForm') {
+    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((key) => {
+      if (form[key] && match[key] !== undefined) {
+        form[key].value = match[key];
+      }
+    });
+  }
+}
+
+// Render table cell.
+function cell(value, column) {
+  if (column === 'stock_status') {
+    const className = value === 'Out of Stock' ? 'badge badge-out' : value === 'Low Stock' ? 'badge badge-low' : 'badge badge-ok';
+    return `<span class="${className}">${escapeHtml(value)}</span>`;
+  }
+
+  if (column === 'status') {
+    const status = value || 'ACTIVE';
+    const className = status === 'REVOKED' ? 'status-revoked' : 'status-active';
+    return `<span class="${className}">${escapeHtml(status)}</span>`;
+  }
+
+  if (column === 'action') {
+    if (typeof value === 'number') {
+      return `
+        <div class="draft-actions">
+          <button class="icon-btn edit-line-btn" type="button" data-edit-line="${value}" title="Edit">✎</button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-line="${value}" title="Remove">×</button>
+        </div>
+      `;
+    }
+
+    const row = value || {};
+    return (row.status || 'ACTIVE') === 'REVOKED'
+      ? '<span class="revoke-disabled">Revoked</span>'
+      : `<button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(row.id)}">Revoke</button>`;
+  }
+
+  return escapeHtml(formatCell(value, column));
+}
+
+// Format value for screen table.
+function formatCell(value, column) {
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total'].includes(column)) {
+    return formatCurrency(value);
+  }
+
+  if (['discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) {
+    return formatNumber(value);
+  }
+
+  if (['created_at', 'updated_at', 'revoked_at'].includes(column) && value) {
+    return formatDateTime(value);
+  }
+
+  return value ?? '';
+}
+
+// Format value for Excel export.
+function exportValue(value, column) {
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) {
+    return numberValue(value);
+  }
+
+  if (['created_at', 'updated_at', 'revoked_at'].includes(column) && value) {
+    return formatDateTime(value);
+  }
+
+  return value ?? '';
+}
+
+// Formatting utilities.
+function formatNumber(value) {
+  return numberValue(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
+
+function formatCurrency(value) {
+  return 'IDR ' + numberValue(value).toLocaleString('id-ID', { maximumFractionDigits: 2 });
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function cleanText(value) {
+  return String(value || '').trim();
+}
+
+function numberValue(value) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function label(value) {
+  return String(value).replaceAll('_', ' ');
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function setMapToObject(source) {
+  return Object.fromEntries(
+    Object.entries(source).map(([key, value]) => [key, [...value].sort()])
+  );
+}
