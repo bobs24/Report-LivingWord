@@ -626,9 +626,166 @@ function showMessage(text, type = 'ok') { $('messageBox').textContent = text; $(
 function setLoading(value) { document.body.classList.toggle('loading', value); }
 function ensureClient() { if (!state.client) { showMessage('Supabase client is not ready.', 'err'); return false; } return true; }
 function ensureReadyForWrite() { if (!ensureClient()) return false; if (!state.user) { showMessage('Please login first before saving data.', 'err'); return false; } return true; }
-function findMatch(form) { const sku = cleanText(form.querySelector('[name="sku"]')?.value).toUpperCase(); const product = cleanText(form.querySelector('[name="product_name"]')?.value).toLowerCase(); const location = cleanText(form.querySelector('[name="location"]')?.value) || cleanText(form.querySelector('[name="from_location"]')?.value); const index = state.stockIndex; return (location && sku && index.bySkuLocation[`${location}||${sku}`]) || (location && product && index.byProductLocation[`${location}||${product}`]) || (sku && index.bySku[sku]) || (product && index.byProduct[product]) || null; }
+
+// Find stock match based on the field that user changed.
+// This makes SKU and Product Name work as true two-way linked fields.
+function findMatch(form, changedFieldName = '') {
+  // Read SKU from the current form and normalize to uppercase.
+  const sku = cleanText(
+    form.querySelector('[name="sku"]')?.value
+  ).toUpperCase();
+
+  // Read Product Name from the current form and normalize for matching.
+  const product = cleanText(
+    form.querySelector('[name="product_name"]')?.value
+  ).toLowerCase();
+
+  // Read location from Sales/Stock form or From Location from Transfer form.
+  const location =
+    cleanText(form.querySelector('[name="location"]')?.value) ||
+    cleanText(form.querySelector('[name="from_location"]')?.value);
+
+  // Shortcut to stock index.
+  const index = state.stockIndex;
+
+  // Build location-based lookup keys.
+  const skuLocationKey = `${location}||${sku}`;
+  const productLocationKey = `${location}||${product}`;
+
+  // If user changed Product Name, Product Name must become source of truth.
+  // This prevents old SKU from forcing back the old product.
+  if (changedFieldName === 'product_name') {
+    return (
+      (location && product && index.byProductLocation[productLocationKey]) ||
+      (product && index.byProduct[product]) ||
+      (location && sku && index.bySkuLocation[skuLocationKey]) ||
+      (sku && index.bySku[sku]) ||
+      null
+    );
+  }
+
+  // If user changed SKU, SKU must become source of truth.
+  if (changedFieldName === 'sku') {
+    return (
+      (location && sku && index.bySkuLocation[skuLocationKey]) ||
+      (sku && index.bySku[sku]) ||
+      (location && product && index.byProductLocation[productLocationKey]) ||
+      (product && index.byProduct[product]) ||
+      null
+    );
+  }
+
+  // If user changed Location / Category / From Location,
+  // keep current SKU priority because SKU is the stronger product key.
+  return (
+    (location && sku && index.bySkuLocation[skuLocationKey]) ||
+    (sku && index.bySku[sku]) ||
+    (location && product && index.byProductLocation[productLocationKey]) ||
+    (product && index.byProduct[product]) ||
+    null
+  );
+}
+
 function priceFor(match, category) { if (!match) return ''; if (category === 'Free Sample') return 0; if (category === 'Tier 1') return match.tier1_price || 0; if (category === 'Tier 2') return match.tier2_price || 0; if (category === 'Tier 3') return match.tier3_price || 0; return match.price || 0; }
-function syncSkuProduct(input) { const form = input.closest('form'); if (!form) return; const skuInput = form.querySelector('[name="sku"]'); const productInput = form.querySelector('[name="product_name"]'); const categoryInput = form.querySelector('[name="category"]'); const channelInput = form.querySelector('[name="channel"]'); if (categoryInput && channelInput && ['Tier 1', 'Tier 2', 'Tier 3'].includes(categoryInput.value)) channelInput.value = 'WA Order'; if (categoryInput && categoryInput.value === 'Free Sample' && form.querySelector('[name="order_number"]')) form.querySelector('[name="order_number"]').value = ''; if (skuInput) skuInput.value = cleanText(skuInput.value).toUpperCase(); if (!skuInput || !productInput) return; const match = findMatch(form); if (!match) return; if (input.name === 'sku' || !productInput.value) productInput.value = match.product_name || productInput.value; if (input.name === 'product_name' || !skuInput.value) skuInput.value = match.sku || skuInput.value; if (categoryInput && form.querySelector('[name="price"]')) form.querySelector('[name="price"]').value = priceFor(match, categoryInput.value); if (form.id === 'stockForm') ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((key) => { if (form[key] && match[key] !== undefined) form[key].value = match[key]; }); }
+
+// Sync SKU, Product Name, and Price based on the field user changed.
+// This supports:
+// 1. SKU -> Product Name
+// 2. Product Name -> SKU
+// 3. Product change after SKU already exists
+// 4. SKU change after Product already exists
+// 5. Category-based price update
+// 6. Stock form price / COGS prefill
+function syncSkuProduct(input) {
+  // Find the parent form of the changed input.
+  const form = input.closest('form');
+
+  // Stop if input is not inside a form.
+  if (!form) return;
+
+  // Get important fields from the form.
+  const skuInput = form.querySelector('[name="sku"]');
+  const productInput = form.querySelector('[name="product_name"]');
+  const categoryInput = form.querySelector('[name="category"]');
+  const channelInput = form.querySelector('[name="channel"]');
+  const orderInput = form.querySelector('[name="order_number"]');
+  const priceInput = form.querySelector('[name="price"]');
+
+  // If category is Tier 1 / Tier 2 / Tier 3, force channel to WA Order.
+  if (
+    categoryInput &&
+    channelInput &&
+    ['Tier 1', 'Tier 2', 'Tier 3'].includes(categoryInput.value)
+  ) {
+    channelInput.value = 'WA Order';
+  }
+
+  // If category is Free Sample, clear Order / Invoice Number.
+  if (
+    categoryInput &&
+    orderInput &&
+    categoryInput.value === 'Free Sample'
+  ) {
+    orderInput.value = '';
+  }
+
+  // Normalize SKU to uppercase.
+  if (skuInput) {
+    skuInput.value = cleanText(skuInput.value).toUpperCase();
+  }
+
+  // Stop if this form does not have SKU and Product Name pair.
+  if (!skuInput || !productInput) return;
+
+  // Detect which field user changed.
+  const changedFieldName = input.name || '';
+
+  // Find stock match using changed field as priority.
+  const match = findMatch(form, changedFieldName);
+
+  // Stop if no stock match is found.
+  if (!match) return;
+
+  // If user changed SKU, update Product Name from matched SKU.
+  if (changedFieldName === 'sku') {
+    productInput.value = match.product_name || '';
+  }
+
+  // If user changed Product Name, update SKU from matched Product Name.
+  if (changedFieldName === 'product_name') {
+    skuInput.value = match.sku || '';
+  }
+
+  // If Location / Category changed, keep both fields aligned only when possible.
+  if (
+    changedFieldName !== 'sku' &&
+    changedFieldName !== 'product_name'
+  ) {
+    if (!skuInput.value && match.sku) {
+      skuInput.value = match.sku;
+    }
+
+    if (!productInput.value && match.product_name) {
+      productInput.value = match.product_name;
+    }
+  }
+
+  // Update Sales price based on selected category.
+  if (categoryInput && priceInput) {
+    priceInput.value = priceFor(match, categoryInput.value);
+  }
+
+  // In Stock form, prefill existing price and COGS values.
+  // User can still edit them after prefill.
+  if (form.id === 'stockForm') {
+    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((fieldName) => {
+      if (form[fieldName] && match[fieldName] !== undefined) {
+        form[fieldName].value = match[fieldName];
+      }
+    });
+  }
+}
+
 function cell(value, column) { if (column === 'stock_status') { const className = value === 'Out of Stock' ? 'badge badge-out' : value === 'Low Stock' ? 'badge badge-low' : 'badge badge-ok'; return `<span class="${className}">${escapeHtml(value)}</span>`; } if (column === 'status') { const status = value || 'ACTIVE'; const className = status === 'REVOKED' ? 'status-revoked' : 'status-active'; return `<span class="${className}">${escapeHtml(status)}</span>`; } if (column === 'action') { if (typeof value === 'number') return `<div class="draft-actions"><button class="icon-btn edit-line-btn" type="button" data-edit-line="${value}" title="Edit draft line">✎</button><button class="icon-btn remove-line-btn" type="button" data-remove-line="${value}" title="Remove draft line">×</button></div>`; const row = value || {}; if (row.__actionType === 'stock') return `<div class="draft-actions"><button class="icon-btn edit-line-btn" type="button" data-edit-stock-id="${escapeHtml(row.id)}" title="Edit stock">✎</button><button class="icon-btn remove-line-btn" type="button" data-remove-stock-id="${escapeHtml(row.id)}" title="Remove stock">×</button></div>`; if (row.__actionType === 'transfer') return `<div class="draft-actions"><button class="icon-btn remove-line-btn" type="button" data-remove-transfer-id="${escapeHtml(row.id)}" title="Remove transfer">×</button></div>`; return (row.status || 'ACTIVE') === 'REVOKED' ? '<span class="revoke-disabled">Revoked</span>' : `<button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(row.id)}">Revoke</button>`; } return escapeHtml(formatCell(value, column)); }
 function formatCell(value, column) { if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total'].includes(column)) return formatCurrency(value); if (['discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return formatNumber(value); if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value); return value ?? ''; }
 function exportValue(value, column) { if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return numberValue(value); if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value); return value ?? ''; }
