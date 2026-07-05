@@ -281,11 +281,21 @@ function renderDropdown(input) {
   panel.innerHTML = options.length ? options.map((option) => `<button type="button" class="dropdown-option">${escapeHtml(option)}</button>`).join('') : '<div class="dropdown-empty">No matching option</div>';
   panel.querySelectorAll('button').forEach((button) => {
     button.onclick = () => {
-      input.value = button.textContent;
-      panel.hidden = true;
-      input.dispatchEvent(new Event('change', { bubbles: true }));
+        // Use trimmed value so no hidden spaces/newlines break matching.
+        input.value = button.textContent.trim();
+
+        // Hide dropdown after selection.
+        panel.hidden = true;
+
+        // Trigger sync based on the input user selected.
+        // If this is Product Name, SKU will follow Product Name.
+        // If this is SKU, Product Name will follow SKU.
+        syncSkuProduct(input);
+
+        // Also dispatch change event for any other listener.
+        input.dispatchEvent(new Event('change', { bubbles: true }));
     };
-  });
+    });
   panel.hidden = false;
   positionDropdown(input);
 }
@@ -629,18 +639,21 @@ function ensureReadyForWrite() { if (!ensureClient()) return false; if (!state.u
 
 // Find stock match based on the field that user changed.
 // This makes SKU and Product Name work as true two-way linked fields.
+// Find stock match using the field that user changed as the main source of truth.
+// If user changed Product Name, Product Name wins.
+// If user changed SKU, SKU wins.
 function findMatch(form, changedFieldName = '') {
-  // Read SKU from the current form and normalize to uppercase.
+  // Get current SKU value from form.
   const sku = cleanText(
     form.querySelector('[name="sku"]')?.value
   ).toUpperCase();
 
-  // Read Product Name from the current form and normalize for matching.
+  // Get current Product Name value from form.
   const product = cleanText(
     form.querySelector('[name="product_name"]')?.value
   ).toLowerCase();
 
-  // Read location from Sales/Stock form or From Location from Transfer form.
+  // Get current Location or From Location.
   const location =
     cleanText(form.querySelector('[name="location"]')?.value) ||
     cleanText(form.querySelector('[name="from_location"]')?.value);
@@ -648,35 +661,31 @@ function findMatch(form, changedFieldName = '') {
   // Shortcut to stock index.
   const index = state.stockIndex;
 
-  // Build location-based lookup keys.
+  // Build lookup keys.
   const skuLocationKey = `${location}||${sku}`;
   const productLocationKey = `${location}||${product}`;
 
-  // If user changed Product Name, Product Name must become source of truth.
-  // This prevents old SKU from forcing back the old product.
+  // IMPORTANT:
+  // If user changed Product Name, Product Name must override old SKU.
   if (changedFieldName === 'product_name') {
     return (
       (location && product && index.byProductLocation[productLocationKey]) ||
       (product && index.byProduct[product]) ||
-      (location && sku && index.bySkuLocation[skuLocationKey]) ||
-      (sku && index.bySku[sku]) ||
       null
     );
   }
 
-  // If user changed SKU, SKU must become source of truth.
+  // IMPORTANT:
+  // If user changed SKU, SKU must override old Product Name.
   if (changedFieldName === 'sku') {
     return (
       (location && sku && index.bySkuLocation[skuLocationKey]) ||
       (sku && index.bySku[sku]) ||
-      (location && product && index.byProductLocation[productLocationKey]) ||
-      (product && index.byProduct[product]) ||
       null
     );
   }
 
-  // If user changed Location / Category / From Location,
-  // keep current SKU priority because SKU is the stronger product key.
+  // For category/location changes, use SKU first because SKU is stronger product key.
   return (
     (location && sku && index.bySkuLocation[skuLocationKey]) ||
     (sku && index.bySku[sku]) ||
@@ -696,14 +705,18 @@ function priceFor(match, category) { if (!match) return ''; if (category === 'Fr
 // 4. SKU change after Product already exists
 // 5. Category-based price update
 // 6. Stock form price / COGS prefill
+// Sync SKU, Product Name, and Price.
+// This supports true two-way behavior:
+// SKU changed          -> Product Name follows SKU
+// Product Name changed -> SKU follows Product Name
 function syncSkuProduct(input) {
-  // Find the parent form of the changed input.
+  // Get parent form.
   const form = input.closest('form');
 
   // Stop if input is not inside a form.
   if (!form) return;
 
-  // Get important fields from the form.
+  // Get related form fields.
   const skuInput = form.querySelector('[name="sku"]');
   const productInput = form.querySelector('[name="product_name"]');
   const categoryInput = form.querySelector('[name="category"]');
@@ -711,7 +724,7 @@ function syncSkuProduct(input) {
   const orderInput = form.querySelector('[name="order_number"]');
   const priceInput = form.querySelector('[name="price"]');
 
-  // If category is Tier 1 / Tier 2 / Tier 3, force channel to WA Order.
+  // Force WA Order if category is tier-based.
   if (
     categoryInput &&
     channelInput &&
@@ -720,7 +733,7 @@ function syncSkuProduct(input) {
     channelInput.value = 'WA Order';
   }
 
-  // If category is Free Sample, clear Order / Invoice Number.
+  // Free Sample does not require Order / Invoice Number.
   if (
     categoryInput &&
     orderInput &&
@@ -734,53 +747,61 @@ function syncSkuProduct(input) {
     skuInput.value = cleanText(skuInput.value).toUpperCase();
   }
 
-  // Stop if this form does not have SKU and Product Name pair.
+  // Stop if form does not have SKU/Product pair.
   if (!skuInput || !productInput) return;
 
-  // Detect which field user changed.
+  // Detect which field triggered the sync.
   const changedFieldName = input.name || '';
+
+  // If Product Name was cleared manually, do not force old SKU back immediately.
+  // User may be preparing to choose another product.
+  if (changedFieldName === 'product_name' && !cleanText(productInput.value)) {
+    return;
+  }
+
+  // If SKU was cleared manually, do not force old Product Name back immediately.
+  // User may be preparing to choose another SKU.
+  if (changedFieldName === 'sku' && !cleanText(skuInput.value)) {
+    return;
+  }
 
   // Find stock match using changed field as priority.
   const match = findMatch(form, changedFieldName);
 
-  // Stop if no stock match is found.
+  // Stop if no match found.
   if (!match) return;
 
-  // If user changed SKU, update Product Name from matched SKU.
+  // If user chose/changed SKU, update Product Name from SKU.
   if (changedFieldName === 'sku') {
     productInput.value = match.product_name || '';
   }
 
-  // If user changed Product Name, update SKU from matched Product Name.
+  // If user chose/changed Product Name, update SKU from Product Name.
   if (changedFieldName === 'product_name') {
     skuInput.value = match.sku || '';
   }
 
-  // If Location / Category changed, keep both fields aligned only when possible.
-  if (
-    changedFieldName !== 'sku' &&
-    changedFieldName !== 'product_name'
-  ) {
-    if (!skuInput.value && match.sku) {
+  // If user changed location/category, keep missing side filled only.
+  if (changedFieldName !== 'sku' && changedFieldName !== 'product_name') {
+    if (!cleanText(skuInput.value) && match.sku) {
       skuInput.value = match.sku;
     }
 
-    if (!productInput.value && match.product_name) {
+    if (!cleanText(productInput.value) && match.product_name) {
       productInput.value = match.product_name;
     }
   }
 
-  // Update Sales price based on selected category.
+  // Update price based on category.
   if (categoryInput && priceInput) {
     priceInput.value = priceFor(match, categoryInput.value);
   }
 
-  // In Stock form, prefill existing price and COGS values.
-  // User can still edit them after prefill.
+  // In Stock form, prefill prices and COGS from existing product/SKU.
   if (form.id === 'stockForm') {
-    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((fieldName) => {
-      if (form[fieldName] && match[fieldName] !== undefined) {
-        form[fieldName].value = match[fieldName];
+    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((key) => {
+      if (form[key] && match[key] !== undefined) {
+        form[key].value = match[key];
       }
     });
   }
