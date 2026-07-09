@@ -125,18 +125,62 @@ async function signOut() {
   showMessage('Signed out successfully.', 'ok');
 }
 
+// Load current authenticated user and check whether the email is allowed.
 async function loadUser() {
+  // Stop if Supabase client is not ready.
   if (!state.client) {
     $('userEmail').textContent = 'Not connected';
     return;
   }
+
+  // Get the currently logged-in Supabase user.
   const { data, error } = await state.client.auth.getUser();
+
+  // If Supabase fails to check session, show the error.
   if (error) {
     $('userEmail').textContent = 'Session check failed';
     showMessage(error.message, 'err');
     return;
   }
+
+  // Save current user into app state.
   state.user = data.user || null;
+
+  // If no user is logged in, just update display and stop.
+  if (!state.user) {
+    updateUserDisplay();
+    return;
+  }
+
+  // Ask Supabase whether this logged-in email exists in allowed_users.
+  const { data: isAllowed, error: allowError } = await state.client.rpc('is_allowed_user');
+
+  // If allowlist check fails, show the Supabase error.
+  if (allowError) {
+    showMessage(allowError.message, 'err');
+    return;
+  }
+
+  // If email is not allowed, sign out immediately.
+  if (!isAllowed) {
+    await state.client.auth.signOut();
+
+    // Clear user from app state.
+    state.user = null;
+
+    // Update signed-in user display.
+    updateUserDisplay();
+
+    // Show clear access denied message.
+    showMessage(
+      'Access denied. Your email is not allowed to use this application.',
+      'err'
+    );
+
+    return;
+  }
+
+  // If email is allowed, show user email normally.
   updateUserDisplay();
 }
 
