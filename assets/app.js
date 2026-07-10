@@ -1177,10 +1177,11 @@ function drawPaymentSection(doc, marginX, paymentY) {
 function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
   const footerY = pageHeight - 31;
 
-  const iconX = marginX + 5.5;
-  const textX = marginX + 14.5;
+  const iconX = marginX + 9;
+  const textX = marginX + 17;
 
   const rowGap = 8.5;
+
   const row1TextY = footerY;
   const row2TextY = footerY + rowGap;
   const row3TextY = footerY + rowGap * 2;
@@ -1217,8 +1218,8 @@ function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
 
 function drawContactIcon(doc, iconX, textY, type) {
   const cx = iconX;
-  const cy = textY - 2.3;
-  const r = 2.2;
+  const cy = textY - 0.4;
+  const r = 2.25;
 
   doc.setDrawColor(INVOICE_THEME.primary);
   doc.setLineWidth(0.38);
@@ -1257,7 +1258,7 @@ function drawContactIcon(doc, iconX, textY, type) {
 
     doc.roundedRect(cx - w / 2, cy - h / 2, w, h, 0.42, 0.42, 'S');
     doc.line(cx - w / 2 + 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
-    doc.line(cx + w / 2 - 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
+    doc.line(cx + w / 2 - 0.  2, cy - h / 2 + 0.2, cx, cy + 0.2);
     doc.line(cx - w / 2 + 0.2, cy + h / 2 - 0.2, cx - 0.7, cy + 0.08);
     doc.line(cx + w / 2 - 0.2, cy + h / 2 - 0.2, cx + 0.7, cy + 0.08);
   }
