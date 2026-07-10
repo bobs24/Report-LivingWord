@@ -1049,7 +1049,7 @@ async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, ro
   doc.setTextColor(INVOICE_THEME.text);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text('LivingWord', marginX, 50);
+  // doc.text('LivingWord', marginX, 50);
 
   doc.setTextColor(INVOICE_THEME.primary);
   doc.setFontSize(28);
@@ -1141,48 +1141,80 @@ function drawPaymentSection(doc, marginX, paymentY) {
     ['Bank Address', 'Jl. Sunset Road No. 88B, Kuta, Kabupaten Badung, Bali, Indonesia']
   ];
 
+  doc.setFillColor(INVOICE_THEME.lightBg);
+  doc.roundedRect(marginX, paymentY - 8, 178, 58, 3, 3, 'F');
+
   doc.setTextColor(INVOICE_THEME.primary);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
-  doc.text('Payment Information', marginX, paymentY);
-  doc.setDrawColor(INVOICE_THEME.accent);
-  doc.setLineWidth(0.5);
-  doc.line(marginX, paymentY + 3, marginX + 52, paymentY + 3);
+  doc.text('Payment Information', marginX + 5, paymentY);
 
-  let y = paymentY + 12;
-  doc.setFontSize(9.5);
-  doc.setTextColor(INVOICE_THEME.text);
+  doc.setDrawColor(INVOICE_THEME.accent);
+  doc.setLineWidth(0.6);
+  doc.line(marginX + 5, paymentY + 4, marginX + 58, paymentY + 4);
+
+  let y = paymentY + 14;
 
   paymentRows.forEach(([labelText, valueText]) => {
+    doc.setFillColor(INVOICE_THEME.accent);
+    doc.circle(marginX + 6, y - 1.5, 1.2, 'F');
+
     doc.setFont('helvetica', 'bold');
-    doc.text(labelText, marginX, y);
+    doc.setFontSize(8.8);
+    doc.setTextColor(INVOICE_THEME.text);
+    doc.text(labelText, marginX + 11, y);
+
     doc.setFont('helvetica', 'normal');
-    const valueLines = doc.splitTextToSize(valueText, 115);
-    doc.text(valueLines, 65, y);
-    y += Math.max(6, valueLines.length * 5);
+    doc.setFontSize(8.8);
+
+    const valueLines = doc.splitTextToSize(valueText, 112);
+    doc.text(valueLines, 66, y);
+
+    y += Math.max(6, valueLines.length * 4.8);
   });
 }
 
 function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
-  const footerY = pageHeight - 34;
+  const footerY = pageHeight - 36;
+
   doc.setDrawColor(INVOICE_THEME.border);
   doc.setLineWidth(0.4);
-  doc.line(marginX, footerY - 8, pageWidth - marginX, footerY - 8);
+  doc.line(marginX, footerY - 10, pageWidth - marginX, footerY - 10);
+
+  drawContactIcon(doc, marginX, footerY - 1, 'W');
+  drawContactIcon(doc, marginX, footerY + 7, 'WA');
+  drawContactIcon(doc, marginX, footerY + 15, '@');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
-  doc.text('Website  : livingword.id', marginX, footerY);
-  doc.text('WhatsApp : +6285775242424', marginX, footerY + 6);
-  doc.text('Email    : devin@livingword.id', marginX, footerY + 12);
+
+  doc.text('livingword.id', marginX + 10, footerY);
+  doc.text('+6285775242424', marginX + 10, footerY + 8);
+  doc.text('devin@livingword.id', marginX + 10, footerY + 16);
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(16);
   doc.setTextColor(INVOICE_THEME.primary);
   doc.text('Thank you', pageWidth - marginX, footerY + 2, { align: 'right' });
-  doc.setFontSize(11);
+
+  doc.setFontSize(10.5);
   doc.setTextColor(INVOICE_THEME.muted);
   doc.text('for your purchase', pageWidth - marginX, footerY + 9, { align: 'right' });
+
+  doc.setDrawColor(INVOICE_THEME.accent);
+  doc.setLineWidth(0.8);
+  doc.line(pageWidth - marginX - 42, footerY + 13, pageWidth - marginX, footerY + 13);
+}
+
+function drawContactIcon(doc, x, y, text) {
+  doc.setFillColor(INVOICE_THEME.primary);
+  doc.circle(x + 3, y - 2, 3.2, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(text.length > 1 ? 4.2 : 5.5);
+  doc.setTextColor('#FFFFFF');
+  doc.text(text, x + 3, y - 0.4, { align: 'center' });
 }
 
 async function recordInvoiceDownload(invoiceNumber, customerName) {
