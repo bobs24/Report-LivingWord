@@ -40,7 +40,7 @@ const state = {
 };
 
 const columns = {
-  sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
+  sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
   stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at'],
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
@@ -397,7 +397,25 @@ async function submitSalesOrder() {
   if (!ensureReadyForWrite()) return;
   if (!state.draftLines.length) return showMessage('Please add at least one product first.', 'err');
   const form = $('salesForm');
-  const header = { sale_date: form.sale_date.value, location: cleanText(form.location.value), category: cleanText(form.category.value), channel: cleanText(form.channel.value), order_number: cleanText(form.order_number.value).toUpperCase() };
+  const header = {
+    // Sales date from the form.
+    sale_date: form.sale_date.value,
+
+    // Stock location used for the sales order.
+    location: cleanText(form.location.value),
+
+    // Sales category selected by user.
+    category: cleanText(form.category.value),
+
+    // Sales channel selected by user.
+    channel: cleanText(form.channel.value),
+
+    // Order / invoice number normalized to uppercase.
+    order_number: cleanText(form.order_number.value).toUpperCase(),
+
+    // Customer name for submitted sales and future invoice.
+    customer_name: cleanText(form.customer_name?.value)
+  };
   if (['Tier 1', 'Tier 2', 'Tier 3'].includes(header.category)) header.channel = 'WA Order';
   if (header.category === 'Free Sample') header.order_number = '';
   if (header.category !== 'Free Sample' && !header.order_number) return showMessage('Order / Invoice Number is required except for Free Sample.', 'err');
