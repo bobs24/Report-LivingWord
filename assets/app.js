@@ -1181,9 +1181,9 @@ function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
   doc.setLineWidth(0.4);
   doc.line(marginX, footerY - 10, pageWidth - marginX, footerY - 10);
 
-  drawContactIcon(doc, marginX, footerY - 1, 'W');
-  drawContactIcon(doc, marginX, footerY + 7, 'WA');
-  drawContactIcon(doc, marginX, footerY + 15, '@');
+  drawContactIcon(doc, marginX, footerY - 1, 'website');
+  drawContactIcon(doc, marginX, footerY + 7, 'whatsapp');
+  drawContactIcon(doc, marginX, footerY + 15, 'email');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -1207,14 +1207,56 @@ function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
   doc.line(pageWidth - marginX - 42, footerY + 13, pageWidth - marginX, footerY + 13);
 }
 
-function drawContactIcon(doc, x, y, text) {
-  doc.setFillColor(INVOICE_THEME.primary);
-  doc.circle(x + 3, y - 2, 3.2, 'F');
+function drawContactIcon(doc, x, y, type) {
+  const cx = x + 3;
+  const cy = y - 2;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(text.length > 1 ? 4.2 : 5.5);
-  doc.setTextColor('#FFFFFF');
-  doc.text(text, x + 3, y - 0.4, { align: 'center' });
+  doc.setDrawColor(INVOICE_THEME.primary);
+  doc.setFillColor(INVOICE_THEME.primary);
+  doc.setLineWidth(0.45);
+
+  if (type === 'website') {
+    doc.circle(cx, cy, 3.2, 'S');
+
+    doc.line(cx - 3.2, cy, cx + 3.2, cy);
+    doc.line(cx, cy - 3.2, cx, cy + 3.2);
+
+    doc.ellipse(cx, cy, 1.25, 3.2, 'S');
+    doc.ellipse(cx, cy, 3.2, 1.25, 'S');
+
+    return;
+  }
+
+  if (type === 'whatsapp') {
+    doc.circle(cx, cy, 3.2, 'S');
+
+    doc.setFillColor('#FFFFFF');
+    doc.triangle(
+      cx - 1.7, cy + 2.2,
+      cx - 0.5, cy + 1.3,
+      cx - 1.9, cy + 1.1,
+      'F'
+    );
+
+    doc.setDrawColor(INVOICE_THEME.primary);
+    doc.setLineWidth(0.65);
+
+    doc.line(cx - 1.25, cy - 0.75, cx - 0.35, cy + 0.35);
+    doc.line(cx - 0.35, cy + 0.35, cx + 0.95, cy + 0.9);
+    doc.line(cx - 1.25, cy - 0.75, cx - 0.55, cy - 1.25);
+    doc.line(cx + 0.95, cy + 0.9, cx + 1.4, cy + 0.2);
+
+    return;
+  }
+
+  if (type === 'email') {
+    doc.roundedRect(cx - 3.3, cy - 2.2, 6.6, 4.4, 0.7, 0.7, 'S');
+
+    doc.line(cx - 3.1, cy - 2, cx, cy + 0.4);
+    doc.line(cx + 3.1, cy - 2, cx, cy + 0.4);
+    doc.line(cx - 3.1, cy + 2, cx - 0.8, cy + 0.2);
+    doc.line(cx + 3.1, cy + 2, cx + 0.8, cy + 0.2);
+  }
 }
 
 async function recordInvoiceDownload(invoiceNumber, customerName) {
