@@ -1176,56 +1176,59 @@ function drawPaymentSection(doc, marginX, paymentY) {
 
 function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
   const footerY = pageHeight - 31;
-  const iconX = marginX + 3;
-  const textX = marginX + 13;
-  const rowGap = 8.5;
 
-  const row1Y = footerY;
-  const row2Y = footerY + rowGap;
-  const row3Y = footerY + rowGap * 2;
+  const iconX = marginX + 5.5;
+  const textX = marginX + 14.5;
+
+  const rowGap = 8.5;
+  const row1TextY = footerY;
+  const row2TextY = footerY + rowGap;
+  const row3TextY = footerY + rowGap * 2;
 
   doc.setDrawColor(INVOICE_THEME.border);
   doc.setLineWidth(0.4);
   doc.line(marginX, footerY - 10, pageWidth - marginX, footerY - 10);
 
-  drawContactIcon(doc, iconX, row1Y, 'website');
-  drawContactIcon(doc, iconX, row2Y, 'whatsapp');
-  drawContactIcon(doc, iconX, row3Y, 'email');
+  drawContactIcon(doc, iconX, row1TextY, 'website');
+  drawContactIcon(doc, iconX, row2TextY, 'whatsapp');
+  drawContactIcon(doc, iconX, row3TextY, 'email');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
 
-  doc.text('livingword.id', textX, row1Y + 2.7);
-  doc.text('+6285775242424', textX, row2Y + 2.7);
-  doc.text('devin@livingword.id', textX, row3Y + 2.7);
+  doc.text('livingword.id', textX, row1TextY);
+  doc.text('+6285775242424', textX, row2TextY);
+  doc.text('devin@livingword.id', textX, row3TextY);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(INVOICE_THEME.primary);
-  doc.text('Thank you', pageWidth - marginX, row1Y + 2.7, { align: 'right' });
+  doc.text('Thank you', pageWidth - marginX, row1TextY, { align: 'right' });
 
   doc.setFontSize(10.5);
   doc.setTextColor(INVOICE_THEME.muted);
-  doc.text('for your purchase', pageWidth - marginX, row2Y + 2.7, { align: 'right' });
+  doc.text('for your purchase', pageWidth - marginX, row2TextY, { align: 'right' });
 
   doc.setDrawColor(INVOICE_THEME.accent);
   doc.setLineWidth(0.8);
-  doc.line(pageWidth - marginX - 42, row3Y + 3.5, pageWidth - marginX, row3Y + 3.5);
+  doc.line(pageWidth - marginX - 42, row3TextY + 4, pageWidth - marginX, row3TextY + 4);
 }
 
-function drawContactIcon(doc, cx, cy, type) {
-  const r = 2.35;
+function drawContactIcon(doc, iconX, textY, type) {
+  const cx = iconX;
+  const cy = textY - 2.3;
+  const r = 2.2;
 
   doc.setDrawColor(INVOICE_THEME.primary);
-  doc.setLineWidth(0.4);
+  doc.setLineWidth(0.38);
 
   if (type === 'website') {
     doc.circle(cx, cy, r, 'S');
     doc.line(cx - r, cy, cx + r, cy);
     doc.line(cx, cy - r, cx, cy + r);
-    doc.ellipse(cx, cy, 0.85, r, 'S');
-    doc.ellipse(cx, cy, r, 0.85, 'S');
+    doc.ellipse(cx, cy, 0.8, r, 'S');
+    doc.ellipse(cx, cy, r, 0.8, 'S');
     return;
   }
 
@@ -1234,29 +1237,29 @@ function drawContactIcon(doc, cx, cy, type) {
 
     doc.setFillColor('#FFFFFF');
     doc.triangle(
-      cx - 1.25, cy + 1.65,
-      cx - 0.4, cy + 1,
-      cx - 1.4, cy + 0.85,
+      cx - 1.1, cy + 1.55,
+      cx - 0.35, cy + 0.9,
+      cx - 1.25, cy + 0.75,
       'F'
     );
 
-    doc.setLineWidth(0.5);
-    doc.line(cx - 0.9, cy - 0.5, cx - 0.2, cy + 0.25);
-    doc.line(cx - 0.2, cy + 0.25, cx + 0.8, cy + 0.6);
-    doc.line(cx - 0.9, cy - 0.5, cx - 0.45, cy - 0.9);
-    doc.line(cx + 0.8, cy + 0.6, cx + 1.1, cy + 0.1);
+    doc.setLineWidth(0.48);
+    doc.line(cx - 0.8, cy - 0.45, cx - 0.15, cy + 0.2);
+    doc.line(cx - 0.15, cy + 0.2, cx + 0.75, cy + 0.55);
+    doc.line(cx - 0.8, cy - 0.45, cx - 0.4, cy - 0.8);
+    doc.line(cx + 0.75, cy + 0.55, cx + 1.0, cy + 0.08);
     return;
   }
 
   if (type === 'email') {
-    const w = 5.2;
-    const h = 3.4;
+    const w = 5.0;
+    const h = 3.2;
 
-    doc.roundedRect(cx - w / 2, cy - h / 2, w, h, 0.45, 0.45, 'S');
-    doc.line(cx - w / 2 + 0.2, cy - h / 2 + 0.2, cx, cy + 0.25);
-    doc.line(cx + w / 2 - 0.2, cy - h / 2 + 0.2, cx, cy + 0.25);
-    doc.line(cx - w / 2 + 0.2, cy + h / 2 - 0.2, cx - 0.75, cy + 0.1);
-    doc.line(cx + w / 2 - 0.2, cy + h / 2 - 0.2, cx + 0.75, cy + 0.1);
+    doc.roundedRect(cx - w / 2, cy - h / 2, w, h, 0.42, 0.42, 'S');
+    doc.line(cx - w / 2 + 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
+    doc.line(cx + w / 2 - 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
+    doc.line(cx - w / 2 + 0.2, cy + h / 2 - 0.2, cx - 0.7, cy + 0.08);
+    doc.line(cx + w / 2 - 0.2, cy + h / 2 - 0.2, cx + 0.7, cy + 0.08);
   }
 }
 
