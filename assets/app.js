@@ -1175,49 +1175,50 @@ function drawPaymentSection(doc, marginX, paymentY) {
 }
 
 function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
-  const footerY = pageHeight - 34;
-  const iconX = marginX;
-  const textX = marginX + 10;
-  const firstRowY = footerY + 2;
-  const rowGap = 8;
+  const footerY = pageHeight - 31;
+  const iconX = marginX + 3;
+  const textX = marginX + 13;
+  const rowGap = 8.5;
+
+  const row1Y = footerY;
+  const row2Y = footerY + rowGap;
+  const row3Y = footerY + rowGap * 2;
 
   doc.setDrawColor(INVOICE_THEME.border);
   doc.setLineWidth(0.4);
-  doc.line(marginX, footerY - 9, pageWidth - marginX, footerY - 9);
+  doc.line(marginX, footerY - 10, pageWidth - marginX, footerY - 10);
 
-  drawContactIcon(doc, iconX, firstRowY, 'website');
-  drawContactIcon(doc, iconX, firstRowY + rowGap, 'whatsapp');
-  drawContactIcon(doc, iconX, firstRowY + rowGap * 2, 'email');
+  drawContactIcon(doc, iconX, row1Y, 'website');
+  drawContactIcon(doc, iconX, row2Y, 'whatsapp');
+  drawContactIcon(doc, iconX, row3Y, 'email');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
 
-  doc.text('livingword.id', textX, firstRowY);
-  doc.text('+6285775242424', textX, firstRowY + rowGap);
-  doc.text('devin@livingword.id', textX, firstRowY + rowGap * 2);
+  doc.text('livingword.id', textX, row1Y + 2.7);
+  doc.text('+6285775242424', textX, row2Y + 2.7);
+  doc.text('devin@livingword.id', textX, row3Y + 2.7);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.setTextColor(INVOICE_THEME.primary);
-  doc.text('Thank you', pageWidth - marginX, firstRowY + 2, { align: 'right' });
+  doc.text('Thank you', pageWidth - marginX, row1Y + 2.7, { align: 'right' });
 
   doc.setFontSize(10.5);
   doc.setTextColor(INVOICE_THEME.muted);
-  doc.text('for your purchase', pageWidth - marginX, firstRowY + 9, { align: 'right' });
+  doc.text('for your purchase', pageWidth - marginX, row2Y + 2.7, { align: 'right' });
 
   doc.setDrawColor(INVOICE_THEME.accent);
   doc.setLineWidth(0.8);
-  doc.line(pageWidth - marginX - 42, firstRowY + 13, pageWidth - marginX, firstRowY + 13);
+  doc.line(pageWidth - marginX - 42, row3Y + 3.5, pageWidth - marginX, row3Y + 3.5);
 }
 
-function drawContactIcon(doc, x, textBaselineY, type) {
-  const cx = x + 3;
-  const cy = textBaselineY - 2.4;
-  const r = 2.45;
+function drawContactIcon(doc, cx, cy, type) {
+  const r = 2.35;
 
   doc.setDrawColor(INVOICE_THEME.primary);
-  doc.setLineWidth(0.42);
+  doc.setLineWidth(0.4);
 
   if (type === 'website') {
     doc.circle(cx, cy, r, 'S');
@@ -1233,23 +1234,23 @@ function drawContactIcon(doc, x, textBaselineY, type) {
 
     doc.setFillColor('#FFFFFF');
     doc.triangle(
-      cx - 1.35, cy + 1.75,
-      cx - 0.45, cy + 1.05,
-      cx - 1.5, cy + 0.9,
+      cx - 1.25, cy + 1.65,
+      cx - 0.4, cy + 1,
+      cx - 1.4, cy + 0.85,
       'F'
     );
 
-    doc.setLineWidth(0.55);
-    doc.line(cx - 0.95, cy - 0.55, cx - 0.25, cy + 0.25);
-    doc.line(cx - 0.25, cy + 0.25, cx + 0.85, cy + 0.65);
-    doc.line(cx - 0.95, cy - 0.55, cx - 0.45, cy - 0.95);
-    doc.line(cx + 0.85, cy + 0.65, cx + 1.15, cy + 0.1);
+    doc.setLineWidth(0.5);
+    doc.line(cx - 0.9, cy - 0.5, cx - 0.2, cy + 0.25);
+    doc.line(cx - 0.2, cy + 0.25, cx + 0.8, cy + 0.6);
+    doc.line(cx - 0.9, cy - 0.5, cx - 0.45, cy - 0.9);
+    doc.line(cx + 0.8, cy + 0.6, cx + 1.1, cy + 0.1);
     return;
   }
 
   if (type === 'email') {
     const w = 5.2;
-    const h = 3.5;
+    const h = 3.4;
 
     doc.roundedRect(cx - w / 2, cy - h / 2, w, h, 0.45, 0.45, 'S');
     doc.line(cx - w / 2 + 0.2, cy - h / 2 + 0.2, cx, cy + 0.25);
