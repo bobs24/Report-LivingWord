@@ -1181,17 +1181,17 @@ function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
   doc.setLineWidth(0.4);
   doc.line(marginX, footerY - 10, pageWidth - marginX, footerY - 10);
 
-  drawContactIcon(doc, marginX, footerY - 1, 'website');
-  drawContactIcon(doc, marginX, footerY + 7, 'whatsapp');
-  drawContactIcon(doc, marginX, footerY + 15, 'email');
+  drawContactIcon(doc, marginX, footerY + 2, 'website');
+  drawContactIcon(doc, marginX, footerY + 10, 'whatsapp');
+  drawContactIcon(doc, marginX, footerY + 18, 'email');
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
 
-  doc.text('livingword.id', marginX + 10, footerY);
-  doc.text('+6285775242424', marginX + 10, footerY + 8);
-  doc.text('devin@livingword.id', marginX + 10, footerY + 16);
+  doc.text('livingword.id', marginX + 9, footerY + 3);
+  doc.text('+6285775242424', marginX + 9, footerY + 11);
+  doc.text('devin@livingword.id', marginX + 9, footerY + 19);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
@@ -1216,19 +1216,19 @@ function drawContactIcon(doc, x, y, type) {
   doc.setLineWidth(0.45);
 
   if (type === 'website') {
-    doc.circle(cx, cy, 3.2, 'S');
+    doc.circle(cx, cy, 2.5, 'S');
 
-    doc.line(cx - 3.2, cy, cx + 3.2, cy);
-    doc.line(cx, cy - 3.2, cx, cy + 3.2);
+    doc.line(cx - 2.5, cy, cx + 2.5, cy);
+    doc.line(cx, cy - 2.5, cx, cy + 2.5);
 
-    doc.ellipse(cx, cy, 1.25, 3.2, 'S');
-    doc.ellipse(cx, cy, 3.2, 1.25, 'S');
+    doc.ellipse(cx, cy, 1.0, 2.5, 'S');
+    doc.ellipse(cx, cy, 2.5, 1.0, 'S');
 
     return;
   }
 
   if (type === 'whatsapp') {
-    doc.circle(cx, cy, 3.2, 'S');
+    doc.circle(cx, cy, 2.5, 'S');
 
     doc.setFillColor('#FFFFFF');
     doc.triangle(
@@ -1250,7 +1250,7 @@ function drawContactIcon(doc, x, y, type) {
   }
 
   if (type === 'email') {
-    doc.roundedRect(cx - 3.3, cy - 2.2, 6.6, 4.4, 0.7, 0.7, 'S');
+    doc.roundedRect(cx - 2.7, cy - 1.8, 5.4, 3.6, 0.6, 0.6, 'S');
 
     doc.line(cx - 3.1, cy - 2, cx, cy + 0.4);
     doc.line(cx + 3.1, cy - 2, cx, cy + 0.4);
