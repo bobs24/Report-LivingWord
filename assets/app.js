@@ -1258,7 +1258,7 @@ function drawContactIcon(doc, iconX, textY, type) {
 
     doc.roundedRect(cx - w / 2, cy - h / 2, w, h, 0.42, 0.42, 'S');
     doc.line(cx - w / 2 + 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
-    doc.line(cx + w / 2 - 0.  2, cy - h / 2 + 0.2, cx, cy + 0.2);
+    doc.line(cx + w / 2 - 0.2, cy - h / 2 + 0.2, cx, cy + 0.2);
     doc.line(cx - w / 2 + 0.2, cy + h / 2 - 0.2, cx - 0.7, cy + 0.08);
     doc.line(cx + w / 2 - 0.2, cy + h / 2 - 0.2, cx + 0.7, cy + 0.08);
   }
