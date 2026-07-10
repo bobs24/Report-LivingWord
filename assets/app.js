@@ -880,3 +880,463 @@ function numberValue(value) { const number = Number(value || 0); return Number.i
 function label(value) { return String(value).replaceAll('_', ' '); }
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
 function setMapToObject(source) { return Object.fromEntries(Object.entries(source).map(([key, value]) => [key, [...value].sort()])); }
+
+// =========================================================
+// Invoice Download Patch
+// Purpose:
+// 1. Show invoice button only for WA Order sales
+// 2. Generate portrait PDF invoice
+// 3. Record invoice download into stock_movements
+// =========================================================
+
+// Temporary invoice colors.
+// Later, when you give the real company hex colors, only change these values.
+const INVOICE_THEME = {
+  primary: '#2F5D50',
+  accent: '#C9A24A',
+  text: '#24312F',
+  muted: '#6B7B77',
+  lightBg: '#F7F3EA',
+  border: '#D8D2C2'
+};
+
+// Override table action handler to include invoice button click.
+// Existing draft, stock, transfer, and revoke logic is kept the same.
+function handleTableActions(event) {
+  const editDraftButton = event.target.closest('[data-edit-line]');
+  const removeDraftButton = event.target.closest('[data-remove-line]');
+  const revokeSalesButton = event.target.closest('[data-revoke-sales-id]');
+  const editStockButton = event.target.closest('[data-edit-stock-id]');
+  const removeStockButton = event.target.closest('[data-remove-stock-id]');
+  const removeTransferButton = event.target.closest('[data-remove-transfer-id]');
+  const invoiceButton = event.target.closest('[data-invoice-sales-id]');
+
+  if (editDraftButton) editDraftLine(Number(editDraftButton.dataset.editLine));
+  if (removeDraftButton) removeDraftLine(Number(removeDraftButton.dataset.removeLine));
+  if (revokeSalesButton) revokeSale(revokeSalesButton.dataset.revokeSalesId);
+  if (editStockButton) editStock(editStockButton.dataset.editStockId);
+  if (removeStockButton) removeStock(removeStockButton.dataset.removeStockId);
+  if (removeTransferButton) removeTransfer(removeTransferButton.dataset.removeTransferId);
+
+  if (invoiceButton) {
+    downloadSalesInvoice(invoiceButton.dataset.invoiceSalesId);
+  }
+}
+
+// Override cell() only to add invoice button for WA Order submitted sales.
+// Other action buttons are preserved.
+function cell(value, column) {
+  if (column === 'stock_status') {
+    const className = value === 'Out of Stock'
+      ? 'badge badge-out'
+      : value === 'Low Stock'
+        ? 'badge badge-low'
+        : 'badge badge-ok';
+
+    return `<span class="${className}">${escapeHtml(value)}</span>`;
+  }
+
+  if (column === 'status') {
+    const status = value || 'ACTIVE';
+    const className = status === 'REVOKED' ? 'status-revoked' : 'status-active';
+
+    return `<span class="${className}">${escapeHtml(status)}</span>`;
+  }
+
+  if (column === 'action') {
+    // Draft order action buttons.
+    if (typeof value === 'number') {
+      return `
+        <div class="draft-actions">
+          <button class="icon-btn edit-line-btn" type="button" data-edit-line="${value}" title="Edit draft line">✎</button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-line="${value}" title="Remove draft line">×</button>
+        </div>
+      `;
+    }
+
+    const row = value || {};
+
+    // Stock table action buttons.
+    if (row.__actionType === 'stock') {
+      return `
+        <div class="draft-actions">
+          <button class="icon-btn edit-line-btn" type="button" data-edit-stock-id="${escapeHtml(row.id)}" title="Edit stock">✎</button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-stock-id="${escapeHtml(row.id)}" title="Remove stock">×</button>
+        </div>
+      `;
+    }
+
+    // Transfer table remove button.
+    if (row.__actionType === 'transfer') {
+      return `
+        <div class="draft-actions">
+          <button class="icon-btn remove-line-btn" type="button" data-remove-transfer-id="${escapeHtml(row.id)}" title="Remove transfer">×</button>
+        </div>
+      `;
+    }
+
+    // Sales table logic.
+    const status = row.status || 'ACTIVE';
+    const isWaOrder = cleanText(row.channel) === 'WA Order';
+
+    // Preserve existing revoked behavior.
+    if (status === 'REVOKED') {
+      return '<span class="revoke-disabled">Revoked</span>';
+    }
+
+    // Show invoice button only for WA Order.
+    const invoiceButton = isWaOrder
+      ? `<button class="icon-btn edit-line-btn" type="button" data-invoice-sales-id="${escapeHtml(row.id)}" title="Download invoice">🧾</button>`
+      : '';
+
+    // Keep the existing revoke button.
+    const revokeButton = `<button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(row.id)}">Revoke</button>`;
+
+    return `
+      <div class="draft-actions">
+        ${invoiceButton}
+        ${revokeButton}
+      </div>
+    `;
+  }
+
+  return escapeHtml(formatCell(value, column));
+}
+
+// Download invoice for one WA Order.
+// If the same order number has multiple products, all products are included.
+async function downloadSalesInvoice(salesId) {
+  if (!ensureReadyForWrite()) return;
+
+  // Find clicked sales row from loaded sales data.
+  const selectedSale = state.sales.find((row) => row.id === salesId);
+
+  if (!selectedSale) {
+    return showMessage('Sales record not found.', 'err');
+  }
+
+  // Invoice is only allowed for WA Order.
+  if (cleanText(selectedSale.channel) !== 'WA Order') {
+    return showMessage('Invoice is only available for WA Order.', 'err');
+  }
+
+  // Do not generate invoice for revoked sales.
+  if ((selectedSale.status || 'ACTIVE') !== 'ACTIVE') {
+    return showMessage('Cannot download invoice for revoked sales.', 'err');
+  }
+
+  const invoiceNumber = cleanText(selectedSale.order_number) || selectedSale.id;
+  const customerName = cleanText(selectedSale.customer_name) || '-';
+
+  // Group all active WA Order rows with the same order number.
+  // If order number is blank, use only selected row.
+  const invoiceRows = cleanText(selectedSale.order_number)
+    ? state.sales.filter((row) =>
+        (row.status || 'ACTIVE') === 'ACTIVE' &&
+        cleanText(row.channel) === 'WA Order' &&
+        cleanText(row.order_number) === cleanText(selectedSale.order_number)
+      )
+    : [selectedSale];
+
+  if (!invoiceRows.length) {
+    return showMessage('No invoice rows found.', 'err');
+  }
+
+  try {
+    // Generate and download the PDF.
+    await generateInvoicePdf({
+      invoiceNumber,
+      customerName,
+      invoiceDate: selectedSale.sale_date,
+      rows: invoiceRows
+    });
+
+    // Record invoice download in stock_movements.
+    await recordInvoiceDownload(invoiceNumber, customerName);
+
+    showMessage('Invoice downloaded and movement recorded.', 'ok');
+
+    // Refresh movements so the log appears.
+    await refreshAll();
+  } catch (error) {
+    showMessage(error.message || 'Failed to generate invoice.', 'err');
+  }
+}
+
+// Generate portrait A4 invoice PDF using jsPDF.
+async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, rows }) {
+  // Make sure jsPDF is loaded from index.html.
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    throw new Error('jsPDF is not loaded. Please check the jsPDF script in index.html.');
+  }
+
+  const { jsPDF } = window.jspdf;
+
+  // Create A4 portrait PDF in millimeters.
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
+  // A4 size: 210 x 297 mm.
+  const pageWidth = 210;
+  const pageHeight = 297;
+  const marginX = 16;
+
+  const logoDataUrl = await loadLogoDataUrl('assets/logo.png');
+
+  // -------------------------
+  // Header
+  // -------------------------
+
+  if (logoDataUrl) {
+    // Logo on top-left.
+    doc.addImage(logoDataUrl, 'PNG', marginX, 14, 30, 30);
+  }
+
+  // Company name under / near logo.
+  doc.setTextColor(INVOICE_THEME.text);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('LivingWord', marginX, 50);
+
+  // INVOICE title on top-right.
+  doc.setTextColor(INVOICE_THEME.primary);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(28);
+  doc.text('INVOICE', pageWidth - marginX, 25, { align: 'right' });
+
+  // Invoice number on top-right below title.
+  doc.setTextColor(INVOICE_THEME.text);
+  doc.setFontSize(11);
+  doc.text(`No: ${invoiceNumber}`, pageWidth - marginX, 33, { align: 'right' });
+
+  // Accent line.
+  doc.setDrawColor(INVOICE_THEME.accent);
+  doc.setLineWidth(0.8);
+  doc.line(marginX, 58, pageWidth - marginX, 58);
+
+  // -------------------------
+  // Invoice metadata
+  // -------------------------
+
+  doc.setTextColor(INVOICE_THEME.text);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.text(`Date: ${formatInvoiceDate(invoiceDate)}`, marginX, 70);
+  doc.text(`Customer Name: ${customerName}`, marginX, 78);
+
+  // -------------------------
+  // Product table
+  // -------------------------
+
+  let y = 94;
+
+  // Table header background.
+  doc.setFillColor(INVOICE_THEME.primary);
+  doc.roundedRect(marginX, y - 7, pageWidth - marginX * 2, 10, 2, 2, 'F');
+
+  doc.setTextColor('#FFFFFF');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+
+  doc.text('Product Name', marginX + 3, y);
+  doc.text('Qty', 112, y, { align: 'right' });
+  doc.text('Price (Rp)', 150, y, { align: 'right' });
+  doc.text('Total (Rp)', pageWidth - marginX - 3, y, { align: 'right' });
+
+  y += 8;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(INVOICE_THEME.text);
+
+  let grandTotal = 0;
+
+  rows.forEach((row, index) => {
+    const qty = numberValue(row.qty);
+    const price = numberValue(row.price);
+    const total = numberValue(row.total_price || qty * price);
+
+    grandTotal += total;
+
+    // Add new page if product rows are too long.
+    if (y > 185) {
+      doc.addPage();
+      y = 24;
+    }
+
+    // Zebra background for readability.
+    if (index % 2 === 0) {
+      doc.setFillColor(250, 250, 250);
+      doc.rect(marginX, y - 5, pageWidth - marginX * 2, 8, 'F');
+    }
+
+    const productLines = doc.splitTextToSize(cleanText(row.product_name), 82);
+
+    doc.text(productLines, marginX + 3, y);
+    doc.text(formatNumber(qty), 112, y, { align: 'right' });
+    doc.text(invoiceCurrency(price), 150, y, { align: 'right' });
+    doc.text(invoiceCurrency(total), pageWidth - marginX - 3, y, { align: 'right' });
+
+    y += Math.max(8, productLines.length * 5);
+  });
+
+  // Table bottom line.
+  doc.setDrawColor(INVOICE_THEME.border);
+  doc.setLineWidth(0.3);
+  doc.line(marginX, y + 2, pageWidth - marginX, y + 2);
+
+  // Grand total box.
+  y += 14;
+
+  doc.setFillColor(INVOICE_THEME.lightBg);
+  doc.roundedRect(pageWidth - 88, y - 8, 72, 18, 2, 2, 'F');
+
+  doc.setTextColor(INVOICE_THEME.muted);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Grand Total', pageWidth - 52, y - 1, { align: 'center' });
+
+  doc.setTextColor(INVOICE_THEME.primary);
+  doc.setFontSize(13);
+  doc.text(invoiceCurrency(grandTotal), pageWidth - 52, y + 6, { align: 'center' });
+
+  // -------------------------
+  // Payment information
+  // -------------------------
+
+  const paymentY = 180;
+
+  doc.setTextColor(INVOICE_THEME.primary);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('Payment Information', marginX, paymentY);
+
+  doc.setDrawColor(INVOICE_THEME.accent);
+  doc.setLineWidth(0.5);
+  doc.line(marginX, paymentY + 3, marginX + 52, paymentY + 3);
+
+  doc.setTextColor(INVOICE_THEME.text);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+
+  const paymentRows = [
+    ['Account Name', 'Berita Baik Indonesia PT'],
+    ['Account No', '1466777880'],
+    ['SWIFT No', 'CENAIDJA'],
+    ['Account Holder Address', 'Jl. Gunung Catur IV No. 8'],
+    ['Bank Name / Branch', 'Bank Central Asia (BCA)'],
+    ['Bank Address', 'Jl. Sunset Road No. 88B, Kuta, Kabupaten Badung, Bali, Indonesia']
+  ];
+
+  let paymentLineY = paymentY + 12;
+
+  paymentRows.forEach(([labelText, valueText]) => {
+    doc.setFont('helvetica', 'bold');
+    doc.text(labelText, marginX, paymentLineY);
+
+    doc.setFont('helvetica', 'normal');
+
+    const valueLines = doc.splitTextToSize(valueText, 115);
+    doc.text(valueLines, 65, paymentLineY);
+
+    paymentLineY += Math.max(6, valueLines.length * 5);
+  });
+
+  // -------------------------
+  // Footer
+  // -------------------------
+
+  const footerY = pageHeight - 34;
+
+  doc.setDrawColor(INVOICE_THEME.border);
+  doc.setLineWidth(0.4);
+  doc.line(marginX, footerY - 8, pageWidth - marginX, footerY - 8);
+
+  // Contact info bottom-left.
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(INVOICE_THEME.text);
+
+  doc.text('Website  : livingword.id', marginX, footerY);
+  doc.text('WhatsApp : +6285775242424', marginX, footerY + 6);
+  doc.text('Email    : devin@livingword.id', marginX, footerY + 12);
+
+  // Thank-you bottom-right.
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(INVOICE_THEME.primary);
+  doc.text('Thank you', pageWidth - marginX, footerY + 2, { align: 'right' });
+
+  doc.setFontSize(11);
+  doc.setTextColor(INVOICE_THEME.muted);
+  doc.text('for your purchase', pageWidth - marginX, footerY + 9, { align: 'right' });
+
+  // Save PDF.
+  doc.save(`Invoice_${safeFileName(invoiceNumber)}.pdf`);
+}
+
+// Record invoice download into stock_movements through Supabase RPC.
+async function recordInvoiceDownload(invoiceNumber, customerName) {
+  const { error } = await state.client.rpc('record_invoice_download', {
+    p_invoice_number: invoiceNumber,
+    p_customer_name: customerName
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+// Load logo image and convert it to Data URL for jsPDF.
+// If logo is missing, invoice still generates without logo.
+async function loadLogoDataUrl(path) {
+  try {
+    const response = await fetch(path, { cache: 'no-store' });
+
+    if (!response.ok) return null;
+
+    const blob = await response.blob();
+
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+// Format invoice date as readable date.
+function formatInvoiceDate(value) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return cleanText(value) || '-';
+
+  return date.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+// Invoice currency should use Rp, not IDR.
+function invoiceCurrency(value) {
+  return 'Rp ' + numberValue(value).toLocaleString('id-ID', {
+    maximumFractionDigits: 0
+  });
+}
+
+// Keep invoice file name safe.
+function safeFileName(value) {
+  return cleanText(value)
+    .replace(/[^a-z0-9-_]+/gi, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '') || 'invoice';
+}
