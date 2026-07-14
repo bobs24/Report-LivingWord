@@ -19,12 +19,12 @@ const MONTHS = [
 ];
 
 const INVOICE_THEME = {
-  primary: '#2F5D50',
-  accent: '#C9A24A',
-  text: '#24312F',
-  muted: '#6B7B77',
-  lightBg: '#F7F3EA',
-  border: '#D8D2C2'
+  primary: '#50603A',
+  accent: '#50603A',
+  text: '#50603A',
+  muted: '#50603A',
+  lightBg: '#FFFFFF',
+  border: '#50603A'
 };
 
 const state = {
@@ -49,7 +49,7 @@ const state = {
 };
 
 const columns = {
-  sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
+  sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'ongkos_kirim', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
   stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at'],
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
@@ -471,7 +471,8 @@ async function submitSalesOrder() {
     category: cleanText(form.category.value),
     channel: cleanText(form.channel.value),
     order_number: cleanText(form.order_number.value).toUpperCase(),
-    customer_name: cleanText(form.customer_name?.value)
+    customer_name: cleanText(form.customer_name?.value),
+    ongkos_kirim: numberValue(form.ongkos_kirim?.value)
   };
 
   if (['Tier 1', 'Tier 2', 'Tier 3'].includes(header.category)) header.channel = 'WA Order';
@@ -1085,14 +1086,18 @@ async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, ro
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
 
-  let grandTotal = 0;
+  let subtotal = 0;
+  let totalDiscount = 0;
+  const ongkosKirim = numberValue(rows[0]?.ongkos_kirim);
 
   rows.forEach((row, index) => {
     const qty = numberValue(row.qty);
     const price = numberValue(row.price);
-    const total = numberValue(row.total_price || qty * price);
+    const lineGross = qty * price;
+    const lineDiscount = numberValue(row.discount);
     const productLines = doc.splitTextToSize(cleanText(row.product_name), 82);
-    grandTotal += total;
+    subtotal += lineGross;
+    totalDiscount += lineDiscount;
 
     if (y > 185) {
       doc.addPage();
@@ -1100,14 +1105,14 @@ async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, ro
     }
 
     if (index % 2 === 0) {
-      doc.setFillColor(250, 250, 250);
+      doc.setFillColor(255, 255, 255);
       doc.rect(marginX, y - 5, pageWidth - marginX * 2, 8, 'F');
     }
 
     doc.text(productLines, marginX + 3, y);
     doc.text(formatNumber(qty), 112, y, { align: 'right' });
     doc.text(invoiceCurrency(price), 150, y, { align: 'right' });
-    doc.text(invoiceCurrency(total), pageWidth - marginX - 3, y, { align: 'right' });
+    doc.text(invoiceCurrency(lineGross), pageWidth - marginX - 3, y, { align: 'right' });
     y += Math.max(8, productLines.length * 5);
   });
 
@@ -1115,16 +1120,32 @@ async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, ro
   doc.setLineWidth(0.3);
   doc.line(marginX, y + 2, pageWidth - marginX, y + 2);
 
-  y += 14;
-  doc.setFillColor(INVOICE_THEME.lightBg);
-  doc.roundedRect(pageWidth - 88, y - 8, 72, 18, 2, 2, 'F');
-  doc.setTextColor(INVOICE_THEME.muted);
+  const grandTotal = subtotal - totalDiscount + ongkosKirim;
+
+  y += 12;
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  doc.setTextColor(INVOICE_THEME.text);
+  doc.text('Subtotal', pageWidth - 86, y, { align: 'left' });
+  doc.text(invoiceCurrency(subtotal), pageWidth - marginX, y, { align: 'right' });
+
+  y += 6;
+  doc.text('Discount', pageWidth - 86, y, { align: 'left' });
+  doc.text(`- ${invoiceCurrency(totalDiscount)}`, pageWidth - marginX, y, { align: 'right' });
+
+  y += 6;
+  doc.text('Ongkos Kirim', pageWidth - 86, y, { align: 'left' });
+  doc.text(invoiceCurrency(ongkosKirim), pageWidth - marginX, y, { align: 'right' });
+
+  y += 8;
+  doc.setDrawColor(INVOICE_THEME.primary);
+  doc.setLineWidth(0.5);
+  doc.line(pageWidth - 86, y - 4, pageWidth - marginX, y - 4);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Grand Total', pageWidth - 52, y - 1, { align: 'center' });
+  doc.setFontSize(11);
   doc.setTextColor(INVOICE_THEME.primary);
-  doc.setFontSize(13);
-  doc.text(invoiceCurrency(grandTotal), pageWidth - 52, y + 6, { align: 'center' });
+  doc.text('Grand Total', pageWidth - 86, y + 2, { align: 'left' });
+  doc.text(invoiceCurrency(grandTotal), pageWidth - marginX, y + 2, { align: 'right' });
 
   drawPaymentSection(doc, marginX, 180);
   drawInvoiceFooter(doc, pageWidth, pageHeight, marginX);
@@ -1376,14 +1397,14 @@ function ensureReadyForWrite() {
 }
 
 function formatCell(value, column) {
-  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total'].includes(column)) return formatCurrency(value);
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total'].includes(column)) return formatCurrency(value);
   if (['discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return formatNumber(value);
   if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value);
   return value ?? '';
 }
 
 function exportValue(value, column) {
-  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return numberValue(value);
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return numberValue(value);
   if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value);
   return value ?? '';
 }
