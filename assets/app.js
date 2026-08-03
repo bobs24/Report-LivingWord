@@ -1169,17 +1169,16 @@ function styleSummaryTable(tableId) {
 
   if (!wrapper || !table) return;
 
-  // Remove horizontal and vertical scrollbars inside summary cards.
-  // The table will shrink and wrap text instead.
+  // Keep vertical scroll allowed, but remove horizontal scroll.
   Object.assign(wrapper.style, {
-    overflow: 'visible',
     overflowX: 'hidden',
-    overflowY: 'visible',
+    overflowY: 'auto',
     maxWidth: '100%',
-    maxHeight: 'none',
+    maxHeight: tableId === 'productSummaryTable' ? '360px' : '320px',
     borderRadius: '14px'
   });
 
+  // Force table to fit the card width.
   Object.assign(table.style, {
     width: '100%',
     minWidth: '0',
@@ -1187,66 +1186,76 @@ function styleSummaryTable(tableId) {
     tableLayout: 'fixed'
   });
 
+  // General compact table styling.
   table.querySelectorAll('th, td').forEach((cell) => {
     Object.assign(cell.style, {
       whiteSpace: 'normal',
       wordBreak: 'break-word',
       overflow: 'visible',
       textOverflow: 'clip',
-      fontSize: '11px',
-      lineHeight: '1.28',
-      padding: '9px 10px',
-      verticalAlign: 'top'
+      fontSize: '10.5px',
+      lineHeight: '1.3',
+      padding: '8px 8px',
+      verticalAlign: 'middle'
     });
   });
 
+  // Header style.
   table.querySelectorAll('th').forEach((header) => {
     Object.assign(header.style, {
-      fontSize: '10px',
+      fontSize: '8.5px',
       fontWeight: '850',
       color: '#50603A',
       textTransform: 'uppercase',
-      letterSpacing: '0.02em'
+      letterSpacing: '0.015em',
+      textAlign: 'center',
+      verticalAlign: 'middle',
+      lineHeight: '1.15',
+      padding: '8px 6px'
     });
   });
 
-  // Category Summary and Channel Summary: 4 columns.
+  // Category Summary and Channel Summary have 4 columns.
   if (tableId === 'categorySummaryTable' || tableId === 'channelSummaryTable') {
     table.querySelectorAll('th:nth-child(1), td:nth-child(1)').forEach((cell) => {
-      cell.style.width = '32%';
+      cell.style.width = '31%';
+      cell.style.textAlign = 'left';
     });
 
     table.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach((cell) => {
-      cell.style.width = '14%';
+      cell.style.width = '13%';
+      cell.style.textAlign = 'center';
     });
 
     table.querySelectorAll('th:nth-child(3), td:nth-child(3)').forEach((cell) => {
-      cell.style.width = '28%';
+      cell.style.width = '30%';
+      cell.style.textAlign = 'center';
     });
 
     table.querySelectorAll('th:nth-child(4), td:nth-child(4)').forEach((cell) => {
       cell.style.width = '26%';
+      cell.style.textAlign = 'center';
     });
   }
 
-  // Product Summary: product name needs the most space.
+  // Product Summary has 3 columns.
+  // Product name gets the most space and wraps vertically if long.
   if (tableId === 'productSummaryTable') {
     table.querySelectorAll('th:nth-child(1), td:nth-child(1)').forEach((cell) => {
-      cell.style.width = '52%';
-      cell.style.minWidth = '0';
+      cell.style.width = '54%';
+      cell.style.textAlign = 'left';
     });
 
     table.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach((cell) => {
-      cell.style.width = '16%';
-      cell.style.textAlign = 'right';
+      cell.style.width = '14%';
+      cell.style.textAlign = 'center';
     });
 
     table.querySelectorAll('th:nth-child(3), td:nth-child(3)').forEach((cell) => {
       cell.style.width = '32%';
-      cell.style.textAlign = 'right';
+      cell.style.textAlign = 'center';
     });
   }
-}
 
 function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction) {
   const card = $('kpiQty')?.closest('.kpi-card');
