@@ -1256,6 +1256,7 @@ function styleSummaryTable(tableId) {
       cell.style.textAlign = 'center';
     });
   }
+}
 
 function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction) {
   const card = $('kpiQty')?.closest('.kpi-card');
