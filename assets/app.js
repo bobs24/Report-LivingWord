@@ -919,6 +919,8 @@ function buildReport(rows) {
   styleSummaryTable('channelSummaryTable');
   styleSummaryTable('productSummaryTable');
 
+  arrangeReportLayout();
+
   drawChart('trendChart', state.reportTimeSeries);
 }
 
@@ -1120,7 +1122,7 @@ function arrangeReportLayout() {
 
   if (!reportGrid) return;
 
-  // Force report section into a clean 3-column dashboard layout.
+  // Keep Sales Trend full width and put 3 summary cards in one row.
   Object.assign(reportGrid.style, {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
@@ -1128,23 +1130,27 @@ function arrangeReportLayout() {
     alignItems: 'start'
   });
 
-  // Sales Trend should stay full-width above the summaries.
   const trendCard = trendChart?.closest('.card');
+
   if (trendCard) {
     trendCard.style.gridColumn = '1 / -1';
   }
 
-  // Summary cards should sit in one row.
   [categoryTable, channelTable, productTable].forEach((tableElement) => {
     const card = tableElement?.closest('.card');
+
     if (!card) return;
 
     card.classList.add('report-summary-card');
+
+    // Important: allow card content to shrink inside 1 row.
     card.style.gridColumn = 'auto';
     card.style.minWidth = '0';
     card.style.overflow = 'hidden';
+    card.style.padding = '18px 20px';
 
     const title = card.querySelector('h2');
+
     if (title) {
       Object.assign(title.style, {
         fontSize: '18px',
@@ -1163,36 +1169,81 @@ function styleSummaryTable(tableId) {
 
   if (!wrapper || !table) return;
 
-  wrapper.style.overflowX = 'auto';
-  wrapper.style.maxWidth = '100%';
-  wrapper.style.borderRadius = '14px';
+  // Remove horizontal and vertical scrollbars inside summary cards.
+  // The table will shrink and wrap text instead.
+  Object.assign(wrapper.style, {
+    overflow: 'visible',
+    overflowX: 'hidden',
+    overflowY: 'visible',
+    maxWidth: '100%',
+    maxHeight: 'none',
+    borderRadius: '14px'
+  });
 
-  table.style.width = '100%';
-  table.style.minWidth = tableId === 'productSummaryTable' ? '560px' : '430px';
-  table.style.tableLayout = 'auto';
+  Object.assign(table.style, {
+    width: '100%',
+    minWidth: '0',
+    maxWidth: '100%',
+    tableLayout: 'fixed'
+  });
 
   table.querySelectorAll('th, td').forEach((cell) => {
-    cell.style.whiteSpace = 'normal';
-    cell.style.wordBreak = 'normal';
-    cell.style.overflow = 'visible';
-    cell.style.textOverflow = 'clip';
-    cell.style.fontSize = '11.5px';
-    cell.style.lineHeight = '1.35';
-    cell.style.padding = '10px 12px';
+    Object.assign(cell.style, {
+      whiteSpace: 'normal',
+      wordBreak: 'break-word',
+      overflow: 'visible',
+      textOverflow: 'clip',
+      fontSize: '11px',
+      lineHeight: '1.28',
+      padding: '9px 10px',
+      verticalAlign: 'top'
+    });
   });
 
   table.querySelectorAll('th').forEach((header) => {
-    header.style.fontSize = '10.5px';
-    header.style.fontWeight = '850';
-    header.style.color = '#50603A';
-    header.style.textTransform = 'uppercase';
-    header.style.letterSpacing = '0.025em';
+    Object.assign(header.style, {
+      fontSize: '10px',
+      fontWeight: '850',
+      color: '#50603A',
+      textTransform: 'uppercase',
+      letterSpacing: '0.02em'
+    });
   });
 
-  // Give product name more space.
+  // Category Summary and Channel Summary: 4 columns.
+  if (tableId === 'categorySummaryTable' || tableId === 'channelSummaryTable') {
+    table.querySelectorAll('th:nth-child(1), td:nth-child(1)').forEach((cell) => {
+      cell.style.width = '32%';
+    });
+
+    table.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach((cell) => {
+      cell.style.width = '14%';
+    });
+
+    table.querySelectorAll('th:nth-child(3), td:nth-child(3)').forEach((cell) => {
+      cell.style.width = '28%';
+    });
+
+    table.querySelectorAll('th:nth-child(4), td:nth-child(4)').forEach((cell) => {
+      cell.style.width = '26%';
+    });
+  }
+
+  // Product Summary: product name needs the most space.
   if (tableId === 'productSummaryTable') {
-    table.querySelectorAll('th:first-child, td:first-child').forEach((cell) => {
-      cell.style.minWidth = '240px';
+    table.querySelectorAll('th:nth-child(1), td:nth-child(1)').forEach((cell) => {
+      cell.style.width = '52%';
+      cell.style.minWidth = '0';
+    });
+
+    table.querySelectorAll('th:nth-child(2), td:nth-child(2)').forEach((cell) => {
+      cell.style.width = '16%';
+      cell.style.textAlign = 'right';
+    });
+
+    table.querySelectorAll('th:nth-child(3), td:nth-child(3)').forEach((cell) => {
+      cell.style.width = '32%';
+      cell.style.textAlign = 'right';
     });
   }
 }
