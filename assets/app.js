@@ -39,6 +39,10 @@ const state = {
   draftLines: [],
   editLineIndex: null,
   editStockId: null,
+  stockSort: {
+    column: null,
+    direction: 'asc'
+  },
   reportRows: [],
   reportProductSummary: [],
   reportChannelSummary: [],
@@ -659,6 +663,7 @@ function handleTableActions(event) {
   const removeStockButton = event.target.closest('[data-remove-stock-id]');
   const removeTransferButton = event.target.closest('[data-remove-transfer-id]');
   const invoiceButton = event.target.closest('[data-invoice-sales-id]');
+  const stockSortButton = event.target.closest('[data-sort-stock-column]');
 
   if (editDraftButton) editDraftLine(Number(editDraftButton.dataset.editLine));
   if (removeDraftButton) removeDraftLine(Number(removeDraftButton.dataset.removeLine));
@@ -667,18 +672,21 @@ function handleTableActions(event) {
   if (removeStockButton) removeStock(removeStockButton.dataset.removeStockId);
   if (removeTransferButton) removeTransfer(removeTransferButton.dataset.removeTransferId);
   if (invoiceButton) downloadSalesInvoice(invoiceButton.dataset.invoiceSalesId);
+  if (stockSortButton) sortStockTable(stockSortButton.dataset.sortStockColumn);
 }
 
 function renderMainTables() {
   const salesRows = filterRows(state.sales, $('salesSearch').value);
-  const activeStockRows = filterRows(
-    state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'),
-    $('stockSearch').value
-  ).map((row) => ({
-    ...row,
-    __actionType: 'stock',
-    last_sold: latestSalesDateBySku(row.sku)
-  }));
+  const activeStockRows = sortStockRows(
+    filterRows(
+      state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'),
+      $('stockSearch').value
+    ).map((row) => ({
+      ...row,
+      __actionType: 'stock',
+      last_sold: latestSalesDateBySku(row.sku)
+    }))
+  );
   const activeTransferRows = filterRows(state.transfers.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'), $('transferSearch').value).map((row) => ({ ...row, __actionType: 'transfer' }));
   const movementRows = filterRows(state.movements, $('movementSearch').value);
 
@@ -1025,15 +1033,139 @@ function formatDate(year, month, day) {
 
 function renderTable(id, rows, tableColumns) {
   const element = $(id);
+
   if (!rows || !rows.length) {
     element.innerHTML = '<div class="empty-state">No data to show.</div>';
     return;
   }
 
-  element.innerHTML = `<table><thead><tr>${tableColumns.map((column) => `<th>${escapeHtml(label(column))}</th>`).join('')}</tr></thead><tbody>${rows.map((row) => `<tr>${tableColumns.map((column) => {
-    const value = column === 'action' && id === 'draftTable' ? row.action : column === 'action' ? row : row[column];
-    return `<td>${cell(value, column)}</td>`;
-  }).join('')}</tr>`).join('')}</tbody></table>`;
+  element.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          ${tableColumns.map((column) => headerCell(id, column)).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `
+          <tr>
+            ${tableColumns.map((column) => {
+              const value = column === 'action' && id === 'draftTable'
+                ? row.action
+                : column === 'action'
+                  ? row
+                  : row[column];
+
+              return `<td>${cell(value, column)}</td>`;
+            }).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function headerCell(tableId, column) {
+  if (tableId !== 'stockTable' || column === 'action') {
+    return `<th>${escapeHtml(label(column))}</th>`;
+  }
+
+  const isActive = state.stockSort.column === column;
+  const arrow = isActive
+    ? state.stockSort.direction === 'asc'
+      ? '↑'
+      : '↓'
+    : '↕';
+
+  return `
+    <th>
+      <button
+        type="button"
+        data-sort-stock-column="${escapeHtml(column)}"
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:6px;
+          width:100%;
+          border:0;
+          background:transparent;
+          padding:0;
+          font:inherit;
+          font-weight:800;
+          color:inherit;
+          cursor:pointer;
+          text-align:left;
+        "
+        title="Sort by ${escapeHtml(label(column))}"
+      >
+        <span>${escapeHtml(label(column))}</span>
+        <span style="
+          font-size:11px;
+          opacity:${isActive ? '1' : '0.45'};
+          color:${isActive ? '#50603A' : 'inherit'};
+        ">
+          ${arrow}
+        </span>
+      </button>
+    </th>
+  `;
+}
+
+function sortStockTable(column) {
+  if (state.stockSort.column === column) {
+    state.stockSort.direction = state.stockSort.direction === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.stockSort.column = column;
+    state.stockSort.direction = 'asc';
+  }
+
+  renderMainTables();
+}
+
+function sortStockRows(rows) {
+  const column = state.stockSort.column;
+  const direction = state.stockSort.direction;
+
+  if (!column) return rows;
+
+  return [...rows].sort((a, b) => {
+    const result = compareStockValue(a[column], b[column], column);
+    return direction === 'asc' ? result : -result;
+  });
+}
+
+function compareStockValue(a, b, column) {
+  if (column === 'last_sold' || column === 'updated_at') {
+    return compareDateValue(a, b);
+  }
+
+  if ([
+    'qty',
+    'price',
+    'tier1_price',
+    'tier2_price',
+    'tier3_price',
+    'cogs'
+  ].includes(column)) {
+    return numberValue(a) - numberValue(b);
+  }
+
+  return cleanText(a).localeCompare(cleanText(b), 'id-ID', {
+    numeric: true,
+    sensitivity: 'base'
+  });
+}
+
+function compareDateValue(a, b) {
+  const dateA = cleanText(a);
+  const dateB = cleanText(b);
+
+  if (dateA === '-' && dateB === '-') return 0;
+  if (dateA === '-') return 1;
+  if (dateB === '-') return -1;
+
+  return dateA.localeCompare(dateB);
 }
 
 function drawChart(id, data) {
