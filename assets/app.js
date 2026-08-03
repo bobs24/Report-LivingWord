@@ -7,8 +7,8 @@ const APP_CONFIG = window.APP_CONFIG || {};
 
 const MASTER_OPTIONS = {
   category: ['Online', 'Offline', 'Free Sample', 'Tier 1', 'Tier 2', 'Tier 3'],
-  channel: ['Shopee', 'Tokopedia', 'WA Order', 'Conference'],
-  location: ['Apartemen Surabaya', 'Mavelyn', 'Gudang Jemursari', 'Gudang Riverside', 'Gibeon', 'Petra', 'LilinKecil', 'Insight Unlimited']
+  channel: ['Shopee', 'Tokopedia', 'WA Order', 'Conference', 'Konsinyasi'],
+  location: ['Apartemen Surabaya', 'Mavelyn', 'Gudang Jemursari', 'Gudang Riverside', 'Gibeon', 'Konsinyasi - Petra', 'Konsinyasi - LilinKecil', 'Konsinyasi - Insight Unlimited']
 };
 
 const MONTHS = [
@@ -56,7 +56,7 @@ const state = {
 
 const columns = {
   sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'ongkos_kirim', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
-  stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at', 'last_sold'],
+  stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'consign_price', 'cogs', 'updated_at', 'last_sold'],
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
   draft: ['action', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'line_total'],
@@ -111,6 +111,24 @@ function bindEvents() {
       const orderInput = document.querySelector('[name="order_number"]');
       if (['Tier 1', 'Tier 2', 'Tier 3'].includes(event.target.value) && channelInput) channelInput.value = 'WA Order';
       if (event.target.value === 'Free Sample' && orderInput) orderInput.value = '';
+      syncSkuProduct(event.target);
+    });
+  }
+
+  const channelInput = document.querySelector('[name="channel"]');
+  if (channelInput) {
+    channelInput.addEventListener('change', (event) => {
+      const form = event.target.closest('form');
+      const locationInput = form?.querySelector('[name="location"]');
+
+      if (locationInput && event.target.value === 'Konsinyasi') {
+        const location = cleanText(locationInput.value);
+
+        if (location && !location.startsWith('Konsinyasi - ')) {
+          locationInput.value = '';
+        }
+      }
+
       syncSkuProduct(event.target);
     });
   }
@@ -263,6 +281,7 @@ function buildStockIndex(rows) {
       tier1_price: numberValue(row.tier1_price),
       tier2_price: numberValue(row.tier2_price),
       tier3_price: numberValue(row.tier3_price),
+      consign_price: numberValue(row.consign_price),
       cogs: numberValue(row.cogs)
     };
 
@@ -350,7 +369,19 @@ function dropdownOptions(input) {
 
   if (type === 'category') return MASTER_OPTIONS.category;
   if (type === 'channel') return MASTER_OPTIONS.channel;
-  if (type === 'location') return MASTER_OPTIONS.location;
+
+  if (type === 'location') {
+    const form = input.closest('form');
+    const channel = cleanText(form?.querySelector('[name="channel"]')?.value);
+
+    if (form?.id === 'salesForm' && channel === 'Konsinyasi') {
+      return MASTER_OPTIONS.location.filter((location) =>
+        cleanText(location).startsWith('Konsinyasi - ')
+      );
+    }
+
+    return MASTER_OPTIONS.location;
+  }
   if (type === 'sku-stock') return index.allSkus;
   if (type === 'product-stock' || type === 'product-report') return index.allProducts;
 
@@ -488,6 +519,10 @@ async function submitSalesOrder() {
   if (header.category === 'Free Sample') header.order_number = '';
   if (header.category !== 'Free Sample' && !header.order_number) return showMessage('Order / Invoice Number is required except for Free Sample.', 'err');
 
+  if (header.channel === 'Konsinyasi' && !header.location.startsWith('Konsinyasi - ')) {
+    return showMessage('For Konsinyasi channel, please choose a Konsinyasi stock location.', 'err');
+  }
+
   const { error } = await state.client.rpc('add_sales_order', { p_header: header, p_lines: state.draftLines });
   if (error) return showMessage(error.message, 'err');
 
@@ -519,6 +554,7 @@ async function submitStock(event) {
       p_tier1_price: payload.tier1_price,
       p_tier2_price: payload.tier2_price,
       p_tier3_price: payload.tier3_price,
+      p_consign_price: payload.consign_price,
       p_cogs: payload.cogs,
       p_edit_reason: cleanText(reason)
     });
@@ -544,7 +580,8 @@ async function submitStock(event) {
     p_tier1_price: payload.tier1_price,
     p_tier2_price: payload.tier2_price,
     p_tier3_price: payload.tier3_price,
-    p_cogs: payload.cogs
+    p_consign_price: payload.consign_price,
+    p_cogs: payload.cogs,
   });
 
   if (error) return showMessage(error.message, 'err');
@@ -567,6 +604,7 @@ function editStock(stockId) {
   form.tier1_price.value = numberValue(stockRow.tier1_price);
   form.tier2_price.value = numberValue(stockRow.tier2_price);
   form.tier3_price.value = numberValue(stockRow.tier3_price);
+  form.consign_price.value = numberValue(stockRow.consign_price);
   form.cogs.value = numberValue(stockRow.cogs);
 
   state.editStockId = stockId;
@@ -1283,12 +1321,19 @@ function findMatch(form, changedFieldName = '') {
   return (location && sku && index.bySkuLocation[skuLocationKey]) || (sku && index.bySku[sku]) || (location && product && index.byProductLocation[productLocationKey]) || (product && index.byProduct[product]) || null;
 }
 
-function priceFor(match, category) {
+function priceFor(match, category, channel) {
   if (!match) return '';
+
   if (category === 'Free Sample') return 0;
+
+  if (channel === 'Konsinyasi') {
+    return match.consign_price || 0;
+  }
+
   if (category === 'Tier 1') return match.tier1_price || 0;
   if (category === 'Tier 2') return match.tier2_price || 0;
   if (category === 'Tier 3') return match.tier3_price || 0;
+
   return match.price || 0;
 }
 
@@ -1323,10 +1368,12 @@ function syncSkuProduct(input) {
     if (!cleanText(productInput.value) && match.product_name) productInput.value = match.product_name;
   }
 
-  if (categoryInput && priceInput) priceInput.value = priceFor(match, categoryInput.value);
+  if (categoryInput && priceInput) {
+    priceInput.value = priceFor(match, categoryInput.value, channelInput?.value);
+  }
 
   if (form.id === 'stockForm') {
-    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs'].forEach((key) => {
+    ['price', 'tier1_price', 'tier2_price', 'tier3_price', 'consign_price', 'cogs'].forEach((key) => {
       if (form[key] && match[key] !== undefined) form[key].value = match[key];
     });
   }
@@ -1699,6 +1746,7 @@ function normalizeStock(payload) {
     tier1_price: numberValue(payload.tier1_price),
     tier2_price: numberValue(payload.tier2_price),
     tier3_price: numberValue(payload.tier3_price),
+    consign_price: numberValue(payload.consign_price),
     cogs: numberValue(payload.cogs)
   };
 }
@@ -1759,14 +1807,14 @@ function ensureReadyForWrite() {
 }
 
 function formatCell(value, column) {
-  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total'].includes(column)) return formatCurrency(value);
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'consign_price','discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total'].includes(column)) return formatCurrency(value);
   if (['discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return formatNumber(value);
   if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value);
   return value ?? '';
 }
 
 function exportValue(value, column) {
-  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return numberValue(value);
+  if (['price', 'tier1_price', 'tier2_price', 'tier3_price', 'consign_price','discount', 'total_price', 'ongkos_kirim', 'cogs', 'amount', 'line_total', 'discount_value', 'qty', 'qty_change', 'transactions'].includes(column)) return numberValue(value);
   if (['created_at', 'updated_at', 'revoked_at', 'removed_at'].includes(column) && value) return formatDateTime(value);
   return value ?? '';
 }
@@ -1796,6 +1844,7 @@ function numberValue(value) {
 
 function label(value) {
   if (value === 'last_sold') return 'Last Sold';
+  if (value === 'consign_price') return 'Consign Price';
   return String(value).replaceAll('_', ' ');
 }
 
