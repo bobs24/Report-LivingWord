@@ -52,7 +52,7 @@ const state = {
 
 const columns = {
   sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'ongkos_kirim', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
-  stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at'],
+  stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'cogs', 'updated_at', 'last_sold'],
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
   draft: ['action', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'line_total'],
@@ -671,7 +671,14 @@ function handleTableActions(event) {
 
 function renderMainTables() {
   const salesRows = filterRows(state.sales, $('salesSearch').value);
-  const activeStockRows = filterRows(state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'), $('stockSearch').value).map((row) => ({ ...row, __actionType: 'stock' }));
+  const activeStockRows = filterRows(
+    state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'),
+    $('stockSearch').value
+  ).map((row) => ({
+    ...row,
+    __actionType: 'stock',
+    last_sold: latestSalesDateBySku(row.sku)
+  }));
   const activeTransferRows = filterRows(state.transfers.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'), $('transferSearch').value).map((row) => ({ ...row, __actionType: 'transfer' }));
   const movementRows = filterRows(state.movements, $('movementSearch').value);
 
@@ -681,6 +688,24 @@ function renderMainTables() {
   renderTable('movementTable', movementRows, columns.movement);
 
   $('salesCountText').textContent = `Showing ${salesRows.length.toLocaleString()} of ${state.sales.length.toLocaleString()} loaded transactions.`;
+}
+
+function latestSalesDateBySku(sku) {
+  const stockSku = cleanText(sku).toUpperCase();
+
+  if (!stockSku) return '-';
+
+  const latestDate = state.sales
+    .filter((sale) =>
+      (sale.status || 'ACTIVE') === 'ACTIVE' &&
+      cleanText(sale.sku).toUpperCase() === stockSku &&
+      cleanText(sale.sale_date)
+    )
+    .map((sale) => cleanText(sale.sale_date))
+    .sort()
+    .at(-1);
+
+  return latestDate || '-';
 }
 
 function renderReportInputs() {
@@ -848,7 +873,7 @@ function renderMonthlyTargetCard(totalAmount) {
       line-height:1.2;
       color:rgba(80, 96, 58, 0.76);
     ">
-      // <span style="font-weight:700;">Target</span>
+      <span style="font-weight:700;">Target</span>
       <span style="
         font-weight:850;
         color:#50603A;
@@ -1638,6 +1663,7 @@ function numberValue(value) {
 }
 
 function label(value) {
+  if (value === 'last_sold') return 'Last Sold';
   return String(value).replaceAll('_', ' ');
 }
 
