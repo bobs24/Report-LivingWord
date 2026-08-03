@@ -820,7 +820,6 @@ function renderMonthlyTargetCard(totalAmount) {
         text-transform:uppercase;
         white-space:nowrap;
       ">
-        Monthly Target
       </span>
     `;
   }
@@ -849,7 +848,7 @@ function renderMonthlyTargetCard(totalAmount) {
       line-height:1.2;
       color:rgba(80, 96, 58, 0.76);
     ">
-      <span style="font-weight:700;">Target</span>
+      // <span style="font-weight:700;">Target</span>
       <span style="
         font-weight:850;
         color:#50603A;
