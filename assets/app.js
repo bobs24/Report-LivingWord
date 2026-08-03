@@ -262,6 +262,7 @@ async function fetchAllRows(tableName, orderColumn, ascending = true) {
 }
 
 function buildStockIndex(rows) {
+  const allLocations = new Set();
   const allProducts = new Set();
   const availableProducts = new Set();
   const allSkus = new Set();
@@ -278,6 +279,7 @@ function buildStockIndex(rows) {
     const product = cleanText(row.product_name);
     const location = cleanText(row.location);
     const qty = numberValue(row.qty);
+    if (location) allLocations.add(location);
     if (!sku && !product) return;
 
     const record = {
@@ -318,6 +320,7 @@ function buildStockIndex(rows) {
   });
 
   state.stockIndex = {
+    allLocations: mergeUniqueSorted(MASTER_OPTIONS.location, [...allLocations]),
     allProducts: [...allProducts].sort(),
     availableProducts: [...availableProducts].sort(),
     allSkus: [...allSkus].sort(),
@@ -377,19 +380,8 @@ function dropdownOptions(input) {
 
   if (type === 'category') return MASTER_OPTIONS.category;
   if (type === 'channel') return MASTER_OPTIONS.channel;
-
-  if (type === 'location') {
-    const form = input.closest('form');
-    const channel = cleanText(form?.querySelector('[name="channel"]')?.value);
-
-    if (form?.id === 'salesForm' && channel === 'Konsinyasi') {
-      return MASTER_OPTIONS.location.filter((location) =>
-        cleanText(location).startsWith('Konsinyasi - ')
-      );
-    }
-
-    return MASTER_OPTIONS.location;
-  }
+  if (type === 'location') return locationOptionsForInput(input);
+  
   if (type === 'sku-stock') return index.allSkus;
   if (type === 'product-stock' || type === 'product-report') return index.allProducts;
 
@@ -403,6 +395,23 @@ function dropdownOptions(input) {
   if (type === 'product-transfer') return fromLocation && index.availableProductsByLocation[fromLocation] ? index.availableProductsByLocation[fromLocation] : index.availableProducts;
 
   return [];
+}
+
+function locationOptionsForInput(input) {
+  const form = input.closest('form');
+  const channel = cleanText(form?.querySelector('[name="channel"]')?.value);
+
+  const allLocations = state.stockIndex.allLocations?.length
+    ? state.stockIndex.allLocations
+    : MASTER_OPTIONS.location;
+
+  if (form?.id === 'salesForm' && channel === 'Konsinyasi') {
+    return allLocations.filter((location) =>
+      cleanText(location).startsWith('Konsinyasi - ')
+    );
+  }
+
+  return allLocations;
 }
 
 function renderDropdown(input) {
@@ -2529,6 +2538,22 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+}
+
+function mergeUniqueSorted(...lists) {
+  const values = new Set();
+
+  lists.flat().forEach((value) => {
+    const text = cleanText(value);
+    if (text) values.add(text);
+  });
+
+  return [...values].sort((a, b) =>
+    a.localeCompare(b, 'id-ID', {
+      numeric: true,
+      sensitivity: 'base'
+    })
+  );
 }
 
 function setMapToObject(source) {
