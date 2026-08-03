@@ -1708,7 +1708,7 @@ function drawChart(id, data) {
 
   const width = 1120;
   const height = 470;
-  const padding = { top: 48, right: 92, bottom: 78, left: 92 };
+  const padding = { top: 48, right: 92, bottom: 92, left: 92 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
 
@@ -1808,16 +1808,25 @@ function drawChart(id, data) {
     `;
   }).join('');
 
-  const xLabels = data.map((item, index) => `
-    <text
-      x="${x(index)}"
-      y="${height - 36}"
-      text-anchor="middle"
-      class="x-axis-label"
-    >
-      ${safe(item.label)}
-    </text>
-  `).join('');
+  const xLabels = data.map((item, index) => {
+    const labelParts = formatChartDateLabel(item.label);
+
+    const labelX = x(index);
+    const labelY = height - 42;
+
+    return `
+      <text
+        x="${labelX}"
+        y="${labelY}"
+        text-anchor="middle"
+        class="x-axis-label"
+        transform="rotate(-10 ${labelX} ${labelY})"
+      >
+        <tspan x="${labelX}" dy="0">${safe(labelParts.main)}</tspan>
+        ${labelParts.year ? `<tspan x="${labelX}" dy="13">${safe(labelParts.year)}</tspan>` : ''}
+      </text>
+    `;
+  }).join('');
 
   element.style.position = 'relative';
 
@@ -1867,6 +1876,30 @@ function drawChart(id, data) {
   `;
 
   attachChartTooltip(element, id);
+}
+
+function formatChartDateLabel(value) {
+  // Convert chart label from YYYY-MM-DD into two-line date format.
+  const text = cleanText(value);
+
+  // If the value is not a normal date, show it as-is.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return {
+      main: text,
+      year: ''
+    };
+  }
+
+  // Split date into year, month, and day.
+  const [year, month, day] = text.split('-');
+
+  // Return two-line label:
+  // main = DD - MM
+  // year = YYYY
+  return {
+    main: `${day} - ${month}`,
+    year
+  };
 }
 
 function integerTicks(maxValue) {
