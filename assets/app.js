@@ -770,12 +770,9 @@ function renderMonthlyTargetCard(totalAmount) {
   if (!amountElement || !card) return;
 
   const isMonthly = $('reportType')?.value === 'monthly';
-  let badge = card.querySelector('#monthlyTargetBadge');
 
   if (!isMonthly) {
-    if (labelElement) labelElement.textContent = 'Total Sales Amount';
-    amountElement.textContent = formatCurrency(totalAmount);
-    if (badge) badge.remove();
+    resetMonthlyTargetCard(totalAmount);
     return;
   }
 
@@ -783,15 +780,115 @@ function renderMonthlyTargetCard(totalAmount) {
     ? totalAmount / MONTHLY_SALES_TARGET * 100
     : 0;
 
+  const cappedPercentage = Math.min(percentage, 100);
+  const remainingAmount = Math.max(MONTHLY_SALES_TARGET - totalAmount, 0);
+  const passedAmount = Math.max(totalAmount - MONTHLY_SALES_TARGET, 0);
   const isTargetPassed = percentage >= 100;
 
   card.style.position = 'relative';
+  card.style.overflow = 'hidden';
+  card.style.minHeight = '152px';
+  card.style.padding = '18px 20px 16px';
+  card.style.border = '1px solid rgba(80, 96, 58, 0.18)';
+  card.style.background = '#FFFFFF';
 
   if (labelElement) {
-    labelElement.textContent = 'Total Sales Amount / Monthly Target';
+    labelElement.innerHTML = `
+      <span style="
+        display:block;
+        max-width:calc(100% - 86px);
+        font-size:12px;
+        line-height:1.1;
+        font-weight:800;
+        letter-spacing:0.04em;
+        color:#50603A;
+        text-transform:uppercase;
+        white-space:nowrap;
+      ">
+        Total Sales Amount
+      </span>
+
+      <span style="
+        display:block;
+        max-width:calc(100% - 86px);
+        margin-top:2px;
+        font-size:10.5px;
+        line-height:1.1;
+        font-weight:750;
+        letter-spacing:0.04em;
+        color:rgba(80, 96, 58, 0.68);
+        text-transform:uppercase;
+        white-space:nowrap;
+      ">
+        Monthly Target
+      </span>
+    `;
   }
 
-  amountElement.textContent = `${formatCurrency(totalAmount)} / ${formatCurrency(MONTHLY_SALES_TARGET)}`;
+  amountElement.innerHTML = `
+    <div style="
+      margin-top:18px;
+      margin-bottom:8px;
+      font-size:25px;
+      line-height:1.05;
+      font-weight:850;
+      color:#50603A;
+      letter-spacing:-0.03em;
+      white-space:nowrap;
+    ">
+      ${formatCurrency(totalAmount)}
+    </div>
+
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      margin-bottom:8px;
+      font-size:12px;
+      line-height:1.2;
+      color:rgba(80, 96, 58, 0.76);
+    ">
+      <span style="font-weight:700;">Target</span>
+      <span style="
+        font-weight:850;
+        color:#50603A;
+        white-space:nowrap;
+      ">
+        ${formatCurrency(MONTHLY_SALES_TARGET)}
+      </span>
+    </div>
+
+    <div style="
+      width:100%;
+      height:7px;
+      border-radius:999px;
+      background:rgba(80, 96, 58, 0.12);
+      overflow:hidden;
+      margin:8px 0 8px;
+    ">
+      <div style="
+        width:${cappedPercentage}%;
+        height:100%;
+        border-radius:999px;
+        background:#50603A;
+      "></div>
+    </div>
+
+    <div style="
+      font-size:11.5px;
+      line-height:1.25;
+      font-weight:750;
+      color:${isTargetPassed ? '#50603A' : 'rgba(80, 96, 58, 0.72)'};
+      white-space:nowrap;
+    ">
+      ${isTargetPassed
+        ? `Passed target by ${formatCurrency(passedAmount)}`
+        : `Remaining ${formatCurrency(remainingAmount)} to target`}
+    </div>
+  `;
+
+  let badge = card.querySelector('#monthlyTargetBadge');
 
   if (!badge) {
     badge = document.createElement('div');
@@ -799,33 +896,71 @@ function renderMonthlyTargetCard(totalAmount) {
     card.appendChild(badge);
   }
 
-  badge.textContent = `${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}% of target`;
+  badge.innerHTML = `
+    <span style="
+      display:block;
+      font-size:13px;
+      line-height:1;
+      font-weight:900;
+      letter-spacing:-0.02em;
+    ">
+      ${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
+    </span>
+
+    <span style="
+      display:block;
+      margin-top:3px;
+      font-size:8.5px;
+      line-height:1;
+      font-weight:850;
+      letter-spacing:0.07em;
+      text-transform:uppercase;
+      opacity:0.9;
+    ">
+      ${isTargetPassed ? 'Passed' : 'Target'}
+    </span>
+  `;
 
   Object.assign(badge.style, {
     position: 'absolute',
-    top: '10px',
-    right: '12px',
-    padding: '5px 10px',
-    borderRadius: '999px',
-    fontSize: '12px',
-    fontWeight: '800',
-    lineHeight: '1',
-    background: isTargetPassed ? '#DCFCE7' : '#FEF3C7',
-    color: isTargetPassed ? '#166534' : '#92400E',
-    border: isTargetPassed ? '1px solid #86EFAC' : '1px solid #FCD34D',
-    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.08)'
+    top: '14px',
+    right: '14px',
+    minWidth: '62px',
+    padding: '7px 9px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    color: isTargetPassed ? '#FFFFFF' : '#50603A',
+    background: isTargetPassed ? '#50603A' : 'rgba(80, 96, 58, 0.10)',
+    border: '1px solid rgba(80, 96, 58, 0.22)',
+    boxShadow: '0 6px 16px rgba(80, 96, 58, 0.14)'
   });
 }
 
-function resetMonthlyTargetCard() {
+function resetMonthlyTargetCard(totalAmount = 0) {
   const amountElement = $('kpiAmount');
   const card = amountElement?.closest('.kpi-card');
   const labelElement = card?.querySelector('p');
   const badge = card?.querySelector('#monthlyTargetBadge');
 
-  if (labelElement) labelElement.textContent = 'Total Sales Amount';
-  if (amountElement) amountElement.textContent = 'IDR 0';
+  if (labelElement) {
+    labelElement.textContent = 'Total Sales Amount';
+    labelElement.removeAttribute('style');
+  }
+
+  if (amountElement) {
+    amountElement.textContent = totalAmount ? formatCurrency(totalAmount) : 'IDR 0';
+  }
+
   if (badge) badge.remove();
+
+  if (card) {
+    card.style.position = '';
+    card.style.overflow = '';
+    card.style.minHeight = '';
+    card.style.padding = '';
+    card.style.border = '';
+    card.style.background = '';
+  }
 }
 
 function addSummary(map, key, initialValue, qty, amount, countTransaction = false) {
