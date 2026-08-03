@@ -73,6 +73,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setDefaultDates();
   bindEvents();
   renderReportInputs();
+
+  // Make Report KPI cards look consistent before user loads report.
+  initializeReportDashboardUi();
+
   renderDraftTable();
   initDropdowns();
   await loadUser();
@@ -985,6 +989,21 @@ function renderReportKpiCards({
   renderGrossProfitMarginCard(grossProfitMargin, grossProfit);
 }
 
+function initializeReportDashboardUi() {
+  renderReportKpiCards({
+    transactions: 0,
+    totalQty: 0,
+    averageQtyPerTransaction: 0,
+    totalAmount: 0,
+    totalCogs: 0,
+    grossProfit: 0,
+    grossProfitMargin: 0
+  });
+
+  ensureCategorySummaryCard();
+  arrangeReportLayout();
+}
+
 function styleUnifiedKpiCard(card, badgeText) {
   Object.assign(card.style, {
     position: 'relative',
@@ -1069,7 +1088,10 @@ function setKpiTitle(card, title, subtitle = '') {
 }
 
 function ensureCategorySummaryCard() {
-  if ($('categorySummaryTable')) return;
+  if ($('categorySummaryTable')) {
+    arrangeReportLayout();
+    return;
+  }
 
   const reportGrid = document.querySelector('.report-grid');
   const channelTable = $('channelSummaryTable');
@@ -1078,13 +1100,61 @@ function ensureCategorySummaryCard() {
   if (!reportGrid || !channelCard) return;
 
   const categoryCard = document.createElement('article');
-  categoryCard.className = 'card';
+  categoryCard.className = 'card report-summary-card';
   categoryCard.innerHTML = `
     <h2>Category Summary</h2>
     <div class="table-wrap compact" id="categorySummaryTable"></div>
   `;
 
   reportGrid.insertBefore(categoryCard, channelCard);
+
+  arrangeReportLayout();
+}
+
+function arrangeReportLayout() {
+  const reportGrid = document.querySelector('.report-grid');
+  const trendChart = $('trendChart');
+  const categoryTable = $('categorySummaryTable');
+  const channelTable = $('channelSummaryTable');
+  const productTable = $('productSummaryTable');
+
+  if (!reportGrid) return;
+
+  // Force report section into a clean 3-column dashboard layout.
+  Object.assign(reportGrid.style, {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '18px',
+    alignItems: 'start'
+  });
+
+  // Sales Trend should stay full-width above the summaries.
+  const trendCard = trendChart?.closest('.card');
+  if (trendCard) {
+    trendCard.style.gridColumn = '1 / -1';
+  }
+
+  // Summary cards should sit in one row.
+  [categoryTable, channelTable, productTable].forEach((tableElement) => {
+    const card = tableElement?.closest('.card');
+    if (!card) return;
+
+    card.classList.add('report-summary-card');
+    card.style.gridColumn = 'auto';
+    card.style.minWidth = '0';
+    card.style.overflow = 'hidden';
+
+    const title = card.querySelector('h2');
+    if (title) {
+      Object.assign(title.style, {
+        fontSize: '18px',
+        lineHeight: '1.15',
+        marginBottom: '14px',
+        color: '#1F2933',
+        fontWeight: '850'
+      });
+    }
+  });
 }
 
 function styleSummaryTable(tableId) {
@@ -1095,9 +1165,10 @@ function styleSummaryTable(tableId) {
 
   wrapper.style.overflowX = 'auto';
   wrapper.style.maxWidth = '100%';
+  wrapper.style.borderRadius = '14px';
 
   table.style.width = '100%';
-  table.style.minWidth = '520px';
+  table.style.minWidth = tableId === 'productSummaryTable' ? '560px' : '430px';
   table.style.tableLayout = 'auto';
 
   table.querySelectorAll('th, td').forEach((cell) => {
@@ -1105,15 +1176,25 @@ function styleSummaryTable(tableId) {
     cell.style.wordBreak = 'normal';
     cell.style.overflow = 'visible';
     cell.style.textOverflow = 'clip';
-    cell.style.fontSize = '12px';
+    cell.style.fontSize = '11.5px';
     cell.style.lineHeight = '1.35';
+    cell.style.padding = '10px 12px';
   });
 
   table.querySelectorAll('th').forEach((header) => {
-    header.style.fontSize = '11px';
+    header.style.fontSize = '10.5px';
     header.style.fontWeight = '850';
     header.style.color = '#50603A';
+    header.style.textTransform = 'uppercase';
+    header.style.letterSpacing = '0.025em';
   });
+
+  // Give product name more space.
+  if (tableId === 'productSummaryTable') {
+    table.querySelectorAll('th:first-child, td:first-child').forEach((cell) => {
+      cell.style.minWidth = '240px';
+    });
+  }
 }
 
 function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction) {
