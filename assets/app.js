@@ -44,6 +44,7 @@ const state = {
     direction: 'asc'
   },
   reportRows: [],
+  reportCategorySummary: [],
   reportProductSummary: [],
   reportChannelSummary: [],
   reportTimeSeries: [],
@@ -60,8 +61,9 @@ const columns = {
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
   draft: ['action', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'line_total'],
-  productSummary: ['product_name', 'qty', 'amount'],
-  channelSummary: ['channel', 'qty', 'amount', 'transactions']
+  categorySummary: ['category', 'qty', 'amount', 'transactions'],
+  channelSummary: ['channel', 'qty', 'amount', 'transactions'],
+  productSummary: ['product_name', 'qty', 'amount']
 };
 
 const $ = (id) => document.getElementById(id);
@@ -97,7 +99,9 @@ function bindEvents() {
   $('transferForm').onsubmit = submitTransfer;
   $('reportType').onchange = () => {
     renderReportInputs();
-    resetMonthlyTargetCard();
+    if (state.reportRows.length) {
+      buildReport(state.reportRows);
+    }
   };
   $('loadReportButton').addEventListener('click', loadReport);
   document.querySelectorAll('[data-export]').forEach((button) => button.onclick = () => exportByType(button.dataset.export));
@@ -801,14 +805,12 @@ async function loadReport(event) {
 function buildReport(rows) {
   state.reportRows = rows;
 
-  // Summary includes all active sales, including Free Sample.
   const summaryRows = rows;
-
-  // Trend and profitability exclude Free Sample because Free Sample has zero revenue.
   const trendRows = rows.filter((row) => !isFreeSampleSale(row));
 
-  const productMap = new Map();
+  const categoryMap = new Map();
   const channelMap = new Map();
+  const productMap = new Map();
   const dateMap = new Map();
 
   let totalQty = 0;
@@ -819,22 +821,22 @@ function buildReport(rows) {
   summaryRows.forEach((row) => {
     const qty = numberValue(row.qty);
     const amount = numberValue(row.total_price);
-    const product = row.product_name || 'Unknown';
+    const category = row.category || 'Unknown';
     const channel = row.channel || 'Unknown';
+    const product = row.product_name || 'Unknown';
 
     totalQty += qty;
     totalAmount += amount;
 
-    // Free Sample is included here.
     addSummary(
-      productMap,
-      product,
-      { product_name: product, qty: 0, amount: 0 },
+      categoryMap,
+      category,
+      { category, qty: 0, amount: 0, transactions: 0 },
       qty,
-      amount
+      amount,
+      true
     );
 
-    // Free Sample is included here.
     addSummary(
       channelMap,
       channel,
@@ -842,6 +844,14 @@ function buildReport(rows) {
       qty,
       amount,
       true
+    );
+
+    addSummary(
+      productMap,
+      product,
+      { product_name: product, qty: 0, amount: 0 },
+      qty,
+      amount
     );
   });
 
@@ -854,7 +864,6 @@ function buildReport(rows) {
     revenueAmount += amount;
     totalCogs += qty * unitCogs;
 
-    // Free Sample is excluded from Sales Trend.
     addSummary(
       dateMap,
       date,
@@ -864,34 +873,48 @@ function buildReport(rows) {
     );
   });
 
+  const transactions = rows.length;
+  const averageQtyPerTransaction = transactions > 0
+    ? totalQty / transactions
+    : 0;
+
   const grossProfit = revenueAmount - totalCogs;
   const grossProfitMargin = revenueAmount > 0
     ? grossProfit / revenueAmount * 100
     : 0;
 
-  state.reportProductSummary = [...productMap.values()]
+  state.reportCategorySummary = [...categoryMap.values()]
     .sort((a, b) => b.amount - a.amount);
 
   state.reportChannelSummary = [...channelMap.values()]
     .sort((a, b) => b.amount - a.amount);
 
+  state.reportProductSummary = [...productMap.values()]
+    .sort((a, b) => b.amount - a.amount);
+
   state.reportTimeSeries = [...dateMap.values()]
     .sort((a, b) => String(a.label).localeCompare(String(b.label)));
 
-  $('kpiQty').textContent = formatNumber(totalQty);
-  renderMonthlyTargetCard(totalAmount);
-  $('kpiTransactions').textContent = formatNumber(rows.length);
-  $('kpiTopProduct').textContent = state.reportProductSummary[0]?.product_name || '-';
-
-  renderReportFinanceCards({
-    revenueAmount,
+  renderReportKpiCards({
+    transactions,
+    totalQty,
+    averageQtyPerTransaction,
+    totalAmount,
     totalCogs,
     grossProfit,
     grossProfitMargin
   });
 
-  renderTable('productSummaryTable', state.reportProductSummary, columns.productSummary);
+  ensureCategorySummaryCard();
+
+  renderTable('categorySummaryTable', state.reportCategorySummary, columns.categorySummary);
   renderTable('channelSummaryTable', state.reportChannelSummary, columns.channelSummary);
+  renderTable('productSummaryTable', state.reportProductSummary, columns.productSummary);
+
+  styleSummaryTable('categorySummaryTable');
+  styleSummaryTable('channelSummaryTable');
+  styleSummaryTable('productSummaryTable');
+
   drawChart('trendChart', state.reportTimeSeries);
 }
 
@@ -905,18 +928,14 @@ function cogsForSale(row) {
 
   if (!sku) return 0;
 
-  // Best match: same SKU and same location.
   const exactStock = state.stock.find((stockRow) =>
     (stockRow.status || 'ACTIVE') === 'ACTIVE' &&
     cleanText(stockRow.sku).toUpperCase() === sku &&
     cleanText(stockRow.location).toLowerCase() === location
   );
 
-  if (exactStock) {
-    return numberValue(exactStock.cogs);
-  }
+  if (exactStock) return numberValue(exactStock.cogs);
 
-  // Fallback: same SKU from any location.
   const sameSkuRows = state.stock.filter((stockRow) =>
     (stockRow.status || 'ACTIVE') === 'ACTIVE' &&
     cleanText(stockRow.sku).toUpperCase() === sku
@@ -928,112 +947,307 @@ function cogsForSale(row) {
     return sum + numberValue(stockRow.qty);
   }, 0);
 
-  // Weighted average COGS when stock qty exists.
   if (totalQty > 0) {
     return sameSkuRows.reduce((sum, stockRow) => {
       return sum + numberValue(stockRow.cogs) * numberValue(stockRow.qty);
     }, 0) / totalQty;
   }
 
-  // Simple average fallback if all qty values are zero.
   return sameSkuRows.reduce((sum, stockRow) => {
     return sum + numberValue(stockRow.cogs);
   }, 0) / sameSkuRows.length;
 }
 
-function renderReportFinanceCards({ revenueAmount, totalCogs, grossProfit, grossProfitMargin }) {
-  const marginCard = ensureKpiCard({
-    id: 'kpiGrossProfitMarginCard',
-    labelId: 'kpiGrossProfitMarginLabel',
-    valueId: 'kpiGrossProfitMargin',
-    metaId: 'kpiGrossProfitMarginMeta',
-    title: 'Gross Profit Margin'
+function renderReportKpiCards({
+  transactions,
+  totalQty,
+  averageQtyPerTransaction,
+  totalAmount,
+  totalCogs,
+  grossProfit,
+  grossProfitMargin
+}) {
+  const qtyCard = $('kpiQty')?.closest('.kpi-card');
+  const amountCard = $('kpiAmount')?.closest('.kpi-card');
+  const transactionsCard = $('kpiTransactions')?.closest('.kpi-card');
+  const topProductCard = $('kpiTopProduct')?.closest('.kpi-card');
+
+  if (!qtyCard || !amountCard || !transactionsCard || !topProductCard) return;
+
+  styleUnifiedKpiCard(qtyCard, 'Activity');
+  styleUnifiedKpiCard(amountCard, monthlyTargetBadge(totalAmount));
+  styleUnifiedKpiCard(transactionsCard, 'Cost');
+  styleUnifiedKpiCard(topProductCard, 'Margin');
+
+  renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction);
+  renderSalesTargetCard(totalAmount);
+  renderCogsCard(totalCogs);
+  renderGrossProfitMarginCard(grossProfitMargin, grossProfit);
+}
+
+function styleUnifiedKpiCard(card, badgeText) {
+  Object.assign(card.style, {
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: '158px',
+    padding: '18px 20px 16px',
+    borderRadius: '18px',
+    border: '1px solid rgba(80, 96, 58, 0.20)',
+    background: 'linear-gradient(135deg, rgba(80, 96, 58, 0.10), #FFFFFF 58%)',
+    boxShadow: '0 12px 28px rgba(15, 23, 42, 0.065)'
   });
 
-  const cogsCard = ensureKpiCard({
-    id: 'kpiCogsCard',
-    labelId: 'kpiCogsLabel',
-    valueId: 'kpiCogs',
-    metaId: 'kpiCogsMeta',
-    title: 'COGS'
+  let badge = card.querySelector('.kpi-corner-badge');
+
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.className = 'kpi-corner-badge';
+    card.appendChild(badge);
+  }
+
+  badge.textContent = badgeText;
+
+  Object.assign(badge.style, {
+    position: 'absolute',
+    top: '14px',
+    right: '14px',
+    minWidth: '62px',
+    padding: '7px 9px',
+    borderRadius: '12px',
+    textAlign: 'center',
+    color: '#50603A',
+    background: 'rgba(80, 96, 58, 0.095)',
+    border: '1px solid rgba(80, 96, 58, 0.22)',
+    boxShadow: '0 6px 16px rgba(80, 96, 58, 0.12)',
+    fontSize: '10px',
+    lineHeight: '1',
+    fontWeight: '900',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap'
   });
+}
 
-  styleReportKpiCard(marginCard, 'margin');
-  styleReportKpiCard(cogsCard, 'cogs');
+function setKpiTitle(card, title, subtitle = '') {
+  const titleElement = card?.querySelector('p');
+  if (!titleElement) return;
 
-  const marginStatus = grossProfitMargin >= 40
-    ? 'Healthy margin'
-    : grossProfitMargin >= 20
-      ? 'Moderate margin'
-      : 'Low margin';
-
-  $('kpiGrossProfitMargin').innerHTML = `
-    <div style="
-      display:flex;
-      align-items:flex-end;
-      justify-content:space-between;
-      gap:10px;
-    ">
-      <span style="
-        display:block;
-        font-size:30px;
-        line-height:1;
-        font-weight:900;
-        color:#50603A;
-        letter-spacing:-0.04em;
-      ">
-        ${grossProfitMargin.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
-      </span>
-
-      <span style="
-        display:inline-flex;
-        align-items:center;
-        justify-content:center;
-        padding:5px 9px;
-        border-radius:999px;
-        font-size:10px;
-        line-height:1;
-        font-weight:850;
-        color:#50603A;
-        background:rgba(80, 96, 58, 0.10);
-        border:1px solid rgba(80, 96, 58, 0.20);
-        white-space:nowrap;
-      ">
-        ${marginStatus}
-      </span>
-    </div>
-  `;
-
-  $('kpiGrossProfitMarginMeta').innerHTML = `
-    <div style="
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:12px;
-      width:100%;
-    ">
-      <span style="
-        font-size:12px;
-        font-weight:800;
-        color:rgba(80, 96, 58, 0.74);
-      ">
-        Margin
-      </span>
-
-      <span style="
-        font-size:13px;
-        font-weight:900;
-        color:#1F2933;
-        white-space:nowrap;
-      ">
-        ${formatCurrency(grossProfit)}
-      </span>
-    </div>
-  `;
-
-  $('kpiCogs').innerHTML = `
+  titleElement.innerHTML = `
     <span style="
       display:block;
+      max-width:calc(100% - 82px);
+      font-size:12px;
+      line-height:1.1;
+      font-weight:850;
+      letter-spacing:0.045em;
+      color:#50603A;
+      text-transform:uppercase;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    ">
+      ${escapeHtml(title)}
+    </span>
+
+    ${subtitle ? `
+      <span style="
+        display:block;
+        max-width:calc(100% - 82px);
+        margin-top:2px;
+        font-size:10.5px;
+        line-height:1.1;
+        font-weight:750;
+        letter-spacing:0.04em;
+        color:rgba(80, 96, 58, 0.68);
+        text-transform:uppercase;
+        white-space:nowrap;
+      ">
+        ${escapeHtml(subtitle)}
+      </span>
+    ` : ''}
+  `;
+}
+
+function ensureCategorySummaryCard() {
+  if ($('categorySummaryTable')) return;
+
+  const reportGrid = document.querySelector('.report-grid');
+  const channelTable = $('channelSummaryTable');
+  const channelCard = channelTable?.closest('.card');
+
+  if (!reportGrid || !channelCard) return;
+
+  const categoryCard = document.createElement('article');
+  categoryCard.className = 'card';
+  categoryCard.innerHTML = `
+    <h2>Category Summary</h2>
+    <div class="table-wrap compact" id="categorySummaryTable"></div>
+  `;
+
+  reportGrid.insertBefore(categoryCard, channelCard);
+}
+
+function styleSummaryTable(tableId) {
+  const wrapper = $(tableId);
+  const table = wrapper?.querySelector('table');
+
+  if (!wrapper || !table) return;
+
+  wrapper.style.overflowX = 'auto';
+  wrapper.style.maxWidth = '100%';
+
+  table.style.width = '100%';
+  table.style.minWidth = '520px';
+  table.style.tableLayout = 'auto';
+
+  table.querySelectorAll('th, td').forEach((cell) => {
+    cell.style.whiteSpace = 'normal';
+    cell.style.wordBreak = 'normal';
+    cell.style.overflow = 'visible';
+    cell.style.textOverflow = 'clip';
+    cell.style.fontSize = '12px';
+    cell.style.lineHeight = '1.35';
+  });
+
+  table.querySelectorAll('th').forEach((header) => {
+    header.style.fontSize = '11px';
+    header.style.fontWeight = '850';
+    header.style.color = '#50603A';
+  });
+}
+
+function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction) {
+  const card = $('kpiQty')?.closest('.kpi-card');
+
+  setKpiTitle(card, 'Transactions', 'Qty Sold');
+
+  $('kpiQty').innerHTML = `
+    <div style="
+      margin-top:18px;
+      font-size:29px;
+      line-height:1;
+      font-weight:900;
+      color:#50603A;
+      letter-spacing:-0.035em;
+      white-space:nowrap;
+    ">
+      ${formatNumber(transactions)}
+    </div>
+
+    <div style="
+      margin-top:14px;
+      padding-top:11px;
+      border-top:1px solid rgba(80, 96, 58, 0.14);
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      font-size:12px;
+      line-height:1.2;
+    ">
+      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">Qty Sold</span>
+      <span style="font-weight:900; color:#1F2933; white-space:nowrap;">${formatNumber(totalQty)}</span>
+    </div>
+
+    <div style="
+      margin-top:7px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      font-size:12px;
+      line-height:1.2;
+    ">
+      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">Avg Qty / Trx</span>
+      <span style="font-weight:900; color:#50603A; white-space:nowrap;">
+        ${averageQtyPerTransaction.toLocaleString('id-ID', { maximumFractionDigits: 2 })}
+      </span>
+    </div>
+  `;
+}
+
+function renderSalesTargetCard(totalAmount) {
+  const card = $('kpiAmount')?.closest('.kpi-card');
+  const isMonthly = $('reportType')?.value === 'monthly';
+  const percentage = MONTHLY_SALES_TARGET > 0
+    ? totalAmount / MONTHLY_SALES_TARGET * 100
+    : 0;
+
+  const cappedPercentage = Math.min(percentage, 100);
+  const remainingAmount = Math.max(MONTHLY_SALES_TARGET - totalAmount, 0);
+
+  setKpiTitle(card, 'Total Sales Amount', isMonthly ? 'Monthly Target' : '');
+
+  $('kpiAmount').innerHTML = `
+    <div style="
+      margin-top:${isMonthly ? '16px' : '26px'};
+      margin-bottom:8px;
+      font-size:27px;
+      line-height:1.05;
+      font-weight:900;
+      color:#50603A;
+      letter-spacing:-0.035em;
+      white-space:nowrap;
+    ">
+      ${formatCurrency(totalAmount)}
+    </div>
+
+    ${isMonthly ? `
+      <div style="
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        gap:12px;
+        margin-bottom:8px;
+        font-size:12px;
+        line-height:1.2;
+        color:rgba(80, 96, 58, 0.76);
+      ">
+        <span style="font-weight:800;">Target</span>
+        <span style="font-weight:900; color:#1F2933; white-space:nowrap;">
+          ${formatCurrency(MONTHLY_SALES_TARGET)}
+        </span>
+      </div>
+
+      <div style="
+        width:100%;
+        height:7px;
+        border-radius:999px;
+        background:rgba(80, 96, 58, 0.12);
+        overflow:hidden;
+        margin:8px 0 8px;
+      ">
+        <div style="
+          width:${cappedPercentage}%;
+          height:100%;
+          border-radius:999px;
+          background:#50603A;
+        "></div>
+      </div>
+
+      <div style="
+        font-size:11.5px;
+        line-height:1.25;
+        font-weight:750;
+        color:rgba(80, 96, 58, 0.72);
+        white-space:nowrap;
+        overflow:hidden;
+        text-overflow:ellipsis;
+      ">
+        ${percentage >= 100
+          ? `Passed target by ${formatCurrency(totalAmount - MONTHLY_SALES_TARGET)}`
+          : `Remaining ${formatCurrency(remainingAmount)} to target`}
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderCogsCard(totalCogs) {
+  const card = $('kpiTransactions')?.closest('.kpi-card');
+
+  setKpiTitle(card, 'COGS', 'Cost of Goods Sold');
+
+  $('kpiTransactions').innerHTML = `
+    <div style="
+      margin-top:25px;
       font-size:27px;
       line-height:1.05;
       font-weight:900;
@@ -1042,35 +1256,66 @@ function renderReportFinanceCards({ revenueAmount, totalCogs, grossProfit, gross
       white-space:nowrap;
     ">
       ${formatCurrency(totalCogs)}
-    </span>
-  `;
+    </div>
 
-  $('kpiCogsMeta').innerHTML = `
     <div style="
+      margin-top:16px;
+      padding-top:11px;
+      border-top:1px solid rgba(80, 96, 58, 0.14);
+      font-size:12px;
+      line-height:1.2;
+      font-weight:750;
+      color:rgba(80, 96, 58, 0.72);
+    ">
+      Estimated from current stock COGS
+    </div>
+  `;
+}
+
+function renderGrossProfitMarginCard(grossProfitMargin, grossProfit) {
+  const card = $('kpiTopProduct')?.closest('.kpi-card');
+
+  setKpiTitle(card, 'Gross Profit Margin', 'Margin');
+
+  $('kpiTopProduct').innerHTML = `
+    <div style="
+      margin-top:18px;
+      font-size:31px;
+      line-height:1;
+      font-weight:900;
+      color:#50603A;
+      letter-spacing:-0.045em;
+      white-space:nowrap;
+    ">
+      ${grossProfitMargin.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
+    </div>
+
+    <div style="
+      margin-top:18px;
+      padding-top:11px;
+      border-top:1px solid rgba(80, 96, 58, 0.14);
       display:flex;
       justify-content:space-between;
-      align-items:center;
       gap:12px;
-      width:100%;
+      font-size:12px;
+      line-height:1.2;
     ">
-      <span style="
-        font-size:12px;
-        font-weight:800;
-        color:rgba(80, 96, 58, 0.74);
-      ">
-        Revenue base
-      </span>
-
-      <span style="
-        font-size:13px;
-        font-weight:900;
-        color:#50603A;
-        white-space:nowrap;
-      ">
-        ${formatCurrency(revenueAmount)}
+      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">Margin</span>
+      <span style="font-weight:900; color:#1F2933; white-space:nowrap;">
+        ${formatCurrency(grossProfit)}
       </span>
     </div>
   `;
+}
+
+function monthlyTargetBadge(totalAmount) {
+  if ($('reportType')?.value !== 'monthly') return 'Sales';
+
+  const percentage = MONTHLY_SALES_TARGET > 0
+    ? totalAmount / MONTHLY_SALES_TARGET * 100
+    : 0;
+
+  return `${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`;
 }
 
 function ensureKpiCard({ id, labelId, valueId, metaId, title }) {
@@ -1134,206 +1379,6 @@ function styleReportKpiCard(card, type) {
       fontSize: '12px',
       lineHeight: '1.2'
     });
-  }
-}
-
-function renderMonthlyTargetCard(totalAmount) {
-  const amountElement = $('kpiAmount');
-  const card = amountElement?.closest('.kpi-card');
-  const labelElement = card?.querySelector('p');
-
-  if (!amountElement || !card) return;
-
-  const isMonthly = $('reportType')?.value === 'monthly';
-
-  if (!isMonthly) {
-    resetMonthlyTargetCard(totalAmount);
-    return;
-  }
-
-  const percentage = MONTHLY_SALES_TARGET > 0
-    ? totalAmount / MONTHLY_SALES_TARGET * 100
-    : 0;
-
-  const cappedPercentage = Math.min(percentage, 100);
-  const remainingAmount = Math.max(MONTHLY_SALES_TARGET - totalAmount, 0);
-  const passedAmount = Math.max(totalAmount - MONTHLY_SALES_TARGET, 0);
-  const isTargetPassed = percentage >= 100;
-
-  card.style.position = 'relative';
-  card.style.overflow = 'hidden';
-  card.style.minHeight = '152px';
-  card.style.padding = '18px 20px 16px';
-  card.style.border = '1px solid rgba(80, 96, 58, 0.18)';
-  card.style.background = '#FFFFFF';
-
-  if (labelElement) {
-    labelElement.innerHTML = `
-      <span style="
-        display:block;
-        max-width:calc(100% - 86px);
-        font-size:12px;
-        line-height:1.1;
-        font-weight:800;
-        letter-spacing:0.04em;
-        color:#50603A;
-        text-transform:uppercase;
-        white-space:nowrap;
-      ">
-        Total Sales Amount
-      </span>
-
-      <span style="
-        display:block;
-        max-width:calc(100% - 86px);
-        margin-top:2px;
-        font-size:10.5px;
-        line-height:1.1;
-        font-weight:750;
-        letter-spacing:0.04em;
-        color:rgba(80, 96, 58, 0.68);
-        text-transform:uppercase;
-        white-space:nowrap;
-      ">
-      </span>
-    `;
-  }
-
-  amountElement.innerHTML = `
-    <div style="
-      margin-top:18px;
-      margin-bottom:8px;
-      font-size:25px;
-      line-height:1.05;
-      font-weight:850;
-      color:#50603A;
-      letter-spacing:-0.03em;
-      white-space:nowrap;
-    ">
-      ${formatCurrency(totalAmount)}
-    </div>
-
-    <div style="
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      gap:12px;
-      margin-bottom:8px;
-      font-size:12px;
-      line-height:1.2;
-      color:rgba(80, 96, 58, 0.76);
-    ">
-      <span style="font-weight:700;">Target</span>
-      <span style="
-        font-weight:850;
-        color:#50603A;
-        white-space:nowrap;
-      ">
-        ${formatCurrency(MONTHLY_SALES_TARGET)}
-      </span>
-    </div>
-
-    <div style="
-      width:100%;
-      height:7px;
-      border-radius:999px;
-      background:rgba(80, 96, 58, 0.12);
-      overflow:hidden;
-      margin:8px 0 8px;
-    ">
-      <div style="
-        width:${cappedPercentage}%;
-        height:100%;
-        border-radius:999px;
-        background:#50603A;
-      "></div>
-    </div>
-
-    <div style="
-      font-size:11.5px;
-      line-height:1.25;
-      font-weight:750;
-      color:${isTargetPassed ? '#50603A' : 'rgba(80, 96, 58, 0.72)'};
-      white-space:nowrap;
-    ">
-      ${isTargetPassed
-        ? `Passed target by ${formatCurrency(passedAmount)}`
-        : `Remaining ${formatCurrency(remainingAmount)} to target`}
-    </div>
-  `;
-
-  let badge = card.querySelector('#monthlyTargetBadge');
-
-  if (!badge) {
-    badge = document.createElement('div');
-    badge.id = 'monthlyTargetBadge';
-    card.appendChild(badge);
-  }
-
-  badge.innerHTML = `
-    <span style="
-      display:block;
-      font-size:13px;
-      line-height:1;
-      font-weight:900;
-      letter-spacing:-0.02em;
-    ">
-      ${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
-    </span>
-
-    <span style="
-      display:block;
-      margin-top:3px;
-      font-size:8.5px;
-      line-height:1;
-      font-weight:850;
-      letter-spacing:0.07em;
-      text-transform:uppercase;
-      opacity:0.9;
-    ">
-      ${isTargetPassed ? 'Passed' : 'Target'}
-    </span>
-  `;
-
-  Object.assign(badge.style, {
-    position: 'absolute',
-    top: '14px',
-    right: '14px',
-    minWidth: '62px',
-    padding: '7px 9px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    color: isTargetPassed ? '#FFFFFF' : '#50603A',
-    background: isTargetPassed ? '#50603A' : 'rgba(80, 96, 58, 0.10)',
-    border: '1px solid rgba(80, 96, 58, 0.22)',
-    boxShadow: '0 6px 16px rgba(80, 96, 58, 0.14)'
-  });
-}
-
-function resetMonthlyTargetCard(totalAmount = 0) {
-  const amountElement = $('kpiAmount');
-  const card = amountElement?.closest('.kpi-card');
-  const labelElement = card?.querySelector('p');
-  const badge = card?.querySelector('#monthlyTargetBadge');
-
-  if (labelElement) {
-    labelElement.textContent = 'Total Sales Amount';
-    labelElement.removeAttribute('style');
-  }
-
-  if (amountElement) {
-    amountElement.textContent = totalAmount ? formatCurrency(totalAmount) : 'IDR 0';
-  }
-
-  if (badge) badge.remove();
-
-  if (card) {
-    card.style.position = '';
-    card.style.overflow = '';
-    card.style.minHeight = '';
-    card.style.padding = '';
-    card.style.border = '';
-    card.style.background = '';
   }
 }
 
@@ -1488,6 +1533,7 @@ function compareStockValue(a, b, column) {
     'tier1_price',
     'tier2_price',
     'tier3_price',
+    'consign_price',
     'cogs'
   ].includes(column)) {
     return numberValue(a) - numberValue(b);
@@ -1520,13 +1566,16 @@ function drawChart(id, data) {
 
   const width = 1120;
   const height = 470;
-  const padding = { top: 48, right: 92, bottom: 92, left: 92 };
+  const padding = { top: 48, right: 92, bottom: 78, left: 92 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
+
   const maxAmount = Math.max(...data.map((item) => numberValue(item.amount)), 1);
   const maxQty = Math.max(...data.map((item) => numberValue(item.qty)), 1);
+
   const amountAxisMax = maxAmount * 1.15;
-  const qtyAxisMax = maxQty * 1.25;
+  const qtyAxisMax = Math.max(Math.ceil(maxQty * 1.15), 1);
+
   const step = plotWidth / Math.max(data.length, 1);
   const barWidth = Math.min(58, Math.max(24, step * 0.5));
 
@@ -1543,65 +1592,33 @@ function drawChart(id, data) {
     return formatNumber(number);
   };
 
-  const shortQty = (value) => formatNumber(value);
-  const ticks = [0, 0.25, 0.5, 0.75, 1];
+  const amountTicks = [0, 0.25, 0.5, 0.75, 1];
+  const qtyTicks = integerTicks(qtyAxisMax);
 
-  const amountAxis = ticks.map((ratio) => {
+  const amountAxis = amountTicks.map((ratio) => {
     const y = padding.top + plotHeight - ratio * plotHeight;
 
     return `
-      <line
-        x1="${padding.left}"
-        y1="${y}"
-        x2="${width - padding.right}"
-        y2="${y}"
-        class="grid-line"
-      ></line>
-
-      <text
-        x="${padding.left - 14}"
-        y="${y + 4}"
-        text-anchor="end"
-        class="axis-label amount-axis-label"
-      >
+      <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"></line>
+      <text x="${padding.left - 14}" y="${y + 4}" text-anchor="end" class="axis-label amount-axis-label">
         ${safe(shortAmount(amountAxisMax * ratio))}
       </text>
     `;
   }).join('');
 
-  const qtyAxis = ticks.map((ratio) => {
-    const y = padding.top + plotHeight - ratio * plotHeight;
+  const qtyAxis = qtyTicks.map((tick) => {
+    const y = yQty(tick);
 
     return `
-      <text
-        x="${width - padding.right + 14}"
-        y="${y + 4}"
-        text-anchor="start"
-        class="axis-label qty-axis-label"
-      >
-        ${safe(shortQty(qtyAxisMax * ratio))}
+      <text x="${width - padding.right + 14}" y="${y + 4}" text-anchor="start" class="axis-label qty-axis-label">
+        ${safe(tick)}
       </text>
     `;
   }).join('');
 
   const axisTitles = `
-    <text
-      x="${padding.left}"
-      y="24"
-      text-anchor="start"
-      class="axis-title amount-title"
-    >
-      Sales Amount
-    </text>
-
-    <text
-      x="${width - padding.right}"
-      y="24"
-      text-anchor="end"
-      class="axis-title qty-title"
-    >
-      Qty Sold
-    </text>
+    <text x="${padding.left}" y="24" text-anchor="start" class="axis-title amount-title">Sales Amount</text>
+    <text x="${width - padding.right}" y="24" text-anchor="end" class="axis-title qty-title">Qty Sold</text>
   `;
 
   const highestAmount = Math.max(...data.map((item) => numberValue(item.amount)));
@@ -1630,20 +1647,18 @@ function drawChart(id, data) {
     `;
   }).join('');
 
-  const linePoints = data
-    .map((item, index) => `${x(index)},${yQty(item.qty)}`)
-    .join(' ');
+  const linePoints = data.map((item, index) => {
+    return `${x(index)},${yQty(item.qty)}`;
+  }).join(' ');
 
   const qtyDots = data.map((item, index) => {
     const qty = numberValue(item.qty);
-    const dotX = x(index);
-    const dotY = yQty(qty);
     const tooltip = `${item.label} | Qty: ${formatNumber(qty)} | Amount: ${formatCurrency(item.amount)}`;
 
     return `
       <circle
-        cx="${dotX}"
-        cy="${dotY}"
+        cx="${x(index)}"
+        cy="${yQty(qty)}"
         r="5.8"
         class="qty-dot chart-hover"
         data-tooltip="${safe(tooltip)}"
@@ -1654,39 +1669,13 @@ function drawChart(id, data) {
   const xLabels = data.map((item, index) => `
     <text
       x="${x(index)}"
-      y="${height - 42}"
-      text-anchor="end"
-      transform="rotate(-35 ${x(index)} ${height - 42})"
+      y="${height - 36}"
+      text-anchor="middle"
       class="x-axis-label"
     >
       ${safe(item.label)}
     </text>
   `).join('');
-
-  const averageAmount = data.reduce((sum, item) => {
-    return sum + numberValue(item.amount);
-  }, 0) / data.length;
-
-  const averageY = yAmount(averageAmount);
-
-  const averageLine = `
-    <line
-      x1="${padding.left}"
-      y1="${averageY}"
-      x2="${width - padding.right}"
-      y2="${averageY}"
-      class="average-line"
-    ></line>
-
-    <text
-      x="${width - padding.right - 8}"
-      y="${averageY - 6}"
-      text-anchor="end"
-      class="average-label"
-    >
-      Avg Amount ${safe(shortAmount(averageAmount))}
-    </text>
-  `;
 
   element.style.position = 'relative';
 
@@ -1726,24 +1715,8 @@ function drawChart(id, data) {
       ${axisTitles}
       ${amountAxis}
       ${qtyAxis}
-      ${averageLine}
-
-      <line
-        x1="${padding.left}"
-        y1="${padding.top + plotHeight}"
-        x2="${width - padding.right}"
-        y2="${padding.top + plotHeight}"
-        class="axis-line"
-      ></line>
-
-      <line
-        x1="${width - padding.right}"
-        y1="${padding.top}"
-        x2="${width - padding.right}"
-        y2="${padding.top + plotHeight}"
-        class="right-axis-line"
-      ></line>
-
+      <line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="axis-line"></line>
+      <line x1="${width - padding.right}" y1="${padding.top}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="right-axis-line"></line>
       <g class="amount-bars">${bars}</g>
       <polyline class="qty-line" points="${linePoints}"></polyline>
       <g class="qty-dots">${qtyDots}</g>
@@ -1752,6 +1725,20 @@ function drawChart(id, data) {
   `;
 
   attachChartTooltip(element, id);
+}
+
+function integerTicks(maxValue) {
+  const max = Math.max(Math.ceil(maxValue), 1);
+
+  if (max <= 5) {
+    return Array.from({ length: max + 1 }, (_, index) => index);
+  }
+
+  const rawTicks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+    return Math.round(max * ratio);
+  });
+
+  return [...new Set(rawTicks)].sort((a, b) => a - b);
 }
 
 function attachChartTooltip(container, chartId) {
@@ -1781,8 +1768,9 @@ function exportByType(type) {
   if (type === 'report') {
     const workbook = XLSX.utils.book_new();
     addSheet(workbook, state.reportRows, 'Raw Sales', columns.sales.filter((column) => column !== 'action'));
-    addSheet(workbook, state.reportProductSummary, 'Product Summary', columns.productSummary);
+    addSheet(workbook, state.reportCategorySummary, 'Category Summary', columns.categorySummary);
     addSheet(workbook, state.reportChannelSummary, 'Channel Summary', columns.channelSummary);
+    addSheet(workbook, state.reportProductSummary, 'Product Summary', columns.productSummary);
     addSheet(workbook, state.reportTimeSeries, 'Trend', ['label', 'qty', 'amount']);
     XLSX.writeFile(workbook, `sales_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
     return;
