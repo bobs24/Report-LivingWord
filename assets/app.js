@@ -800,37 +800,341 @@ async function loadReport(event) {
 
 function buildReport(rows) {
   state.reportRows = rows;
+
+  // Summary includes all active sales, including Free Sample.
+  const summaryRows = rows;
+
+  // Trend and profitability exclude Free Sample because Free Sample has zero revenue.
+  const trendRows = rows.filter((row) => !isFreeSampleSale(row));
+
   const productMap = new Map();
   const channelMap = new Map();
   const dateMap = new Map();
+
   let totalQty = 0;
   let totalAmount = 0;
+  let revenueAmount = 0;
+  let totalCogs = 0;
 
-  rows.forEach((row) => {
+  summaryRows.forEach((row) => {
     const qty = numberValue(row.qty);
     const amount = numberValue(row.total_price);
     const product = row.product_name || 'Unknown';
     const channel = row.channel || 'Unknown';
-    const date = row.sale_date || 'Unknown';
 
     totalQty += qty;
     totalAmount += amount;
-    addSummary(productMap, product, { product_name: product, qty: 0, amount: 0 }, qty, amount);
-    addSummary(channelMap, channel, { channel, qty: 0, amount: 0, transactions: 0 }, qty, amount, true);
-    addSummary(dateMap, date, { label: date, qty: 0, amount: 0 }, qty, amount);
+
+    // Free Sample is included here.
+    addSummary(
+      productMap,
+      product,
+      { product_name: product, qty: 0, amount: 0 },
+      qty,
+      amount
+    );
+
+    // Free Sample is included here.
+    addSummary(
+      channelMap,
+      channel,
+      { channel, qty: 0, amount: 0, transactions: 0 },
+      qty,
+      amount,
+      true
+    );
   });
 
-  state.reportProductSummary = [...productMap.values()].sort((a, b) => b.amount - a.amount);
-  state.reportChannelSummary = [...channelMap.values()].sort((a, b) => b.amount - a.amount);
-  state.reportTimeSeries = [...dateMap.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  trendRows.forEach((row) => {
+    const qty = numberValue(row.qty);
+    const amount = numberValue(row.total_price);
+    const date = row.sale_date || 'Unknown';
+    const unitCogs = cogsForSale(row);
+
+    revenueAmount += amount;
+    totalCogs += qty * unitCogs;
+
+    // Free Sample is excluded from Sales Trend.
+    addSummary(
+      dateMap,
+      date,
+      { label: date, qty: 0, amount: 0 },
+      qty,
+      amount
+    );
+  });
+
+  const grossProfit = revenueAmount - totalCogs;
+  const grossProfitMargin = revenueAmount > 0
+    ? grossProfit / revenueAmount * 100
+    : 0;
+
+  state.reportProductSummary = [...productMap.values()]
+    .sort((a, b) => b.amount - a.amount);
+
+  state.reportChannelSummary = [...channelMap.values()]
+    .sort((a, b) => b.amount - a.amount);
+
+  state.reportTimeSeries = [...dateMap.values()]
+    .sort((a, b) => String(a.label).localeCompare(String(b.label)));
 
   $('kpiQty').textContent = formatNumber(totalQty);
   renderMonthlyTargetCard(totalAmount);
   $('kpiTransactions').textContent = formatNumber(rows.length);
   $('kpiTopProduct').textContent = state.reportProductSummary[0]?.product_name || '-';
+
+  renderReportFinanceCards({
+    revenueAmount,
+    totalCogs,
+    grossProfit,
+    grossProfitMargin
+  });
+
   renderTable('productSummaryTable', state.reportProductSummary, columns.productSummary);
   renderTable('channelSummaryTable', state.reportChannelSummary, columns.channelSummary);
   drawChart('trendChart', state.reportTimeSeries);
+}
+
+function isFreeSampleSale(row) {
+  return cleanText(row.category) === 'Free Sample';
+}
+
+function cogsForSale(row) {
+  const sku = cleanText(row.sku).toUpperCase();
+  const location = cleanText(row.location).toLowerCase();
+
+  if (!sku) return 0;
+
+  // Best match: same SKU and same location.
+  const exactStock = state.stock.find((stockRow) =>
+    (stockRow.status || 'ACTIVE') === 'ACTIVE' &&
+    cleanText(stockRow.sku).toUpperCase() === sku &&
+    cleanText(stockRow.location).toLowerCase() === location
+  );
+
+  if (exactStock) {
+    return numberValue(exactStock.cogs);
+  }
+
+  // Fallback: same SKU from any location.
+  const sameSkuRows = state.stock.filter((stockRow) =>
+    (stockRow.status || 'ACTIVE') === 'ACTIVE' &&
+    cleanText(stockRow.sku).toUpperCase() === sku
+  );
+
+  if (!sameSkuRows.length) return 0;
+
+  const totalQty = sameSkuRows.reduce((sum, stockRow) => {
+    return sum + numberValue(stockRow.qty);
+  }, 0);
+
+  // Weighted average COGS when stock qty exists.
+  if (totalQty > 0) {
+    return sameSkuRows.reduce((sum, stockRow) => {
+      return sum + numberValue(stockRow.cogs) * numberValue(stockRow.qty);
+    }, 0) / totalQty;
+  }
+
+  // Simple average fallback if all qty values are zero.
+  return sameSkuRows.reduce((sum, stockRow) => {
+    return sum + numberValue(stockRow.cogs);
+  }, 0) / sameSkuRows.length;
+}
+
+function renderReportFinanceCards({ revenueAmount, totalCogs, grossProfit, grossProfitMargin }) {
+  const marginCard = ensureKpiCard({
+    id: 'kpiGrossProfitMarginCard',
+    labelId: 'kpiGrossProfitMarginLabel',
+    valueId: 'kpiGrossProfitMargin',
+    metaId: 'kpiGrossProfitMarginMeta',
+    title: 'Gross Profit Margin'
+  });
+
+  const cogsCard = ensureKpiCard({
+    id: 'kpiCogsCard',
+    labelId: 'kpiCogsLabel',
+    valueId: 'kpiCogs',
+    metaId: 'kpiCogsMeta',
+    title: 'COGS'
+  });
+
+  styleReportKpiCard(marginCard, 'margin');
+  styleReportKpiCard(cogsCard, 'cogs');
+
+  const marginStatus = grossProfitMargin >= 40
+    ? 'Healthy margin'
+    : grossProfitMargin >= 20
+      ? 'Moderate margin'
+      : 'Low margin';
+
+  $('kpiGrossProfitMargin').innerHTML = `
+    <div style="
+      display:flex;
+      align-items:flex-end;
+      justify-content:space-between;
+      gap:10px;
+    ">
+      <span style="
+        display:block;
+        font-size:30px;
+        line-height:1;
+        font-weight:900;
+        color:#50603A;
+        letter-spacing:-0.04em;
+      ">
+        ${grossProfitMargin.toLocaleString('id-ID', { maximumFractionDigits: 1 })}%
+      </span>
+
+      <span style="
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:5px 9px;
+        border-radius:999px;
+        font-size:10px;
+        line-height:1;
+        font-weight:850;
+        color:#50603A;
+        background:rgba(80, 96, 58, 0.10);
+        border:1px solid rgba(80, 96, 58, 0.20);
+        white-space:nowrap;
+      ">
+        ${marginStatus}
+      </span>
+    </div>
+  `;
+
+  $('kpiGrossProfitMarginMeta').innerHTML = `
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      width:100%;
+    ">
+      <span style="
+        font-size:12px;
+        font-weight:800;
+        color:rgba(80, 96, 58, 0.74);
+      ">
+        Margin
+      </span>
+
+      <span style="
+        font-size:13px;
+        font-weight:900;
+        color:#1F2933;
+        white-space:nowrap;
+      ">
+        ${formatCurrency(grossProfit)}
+      </span>
+    </div>
+  `;
+
+  $('kpiCogs').innerHTML = `
+    <span style="
+      display:block;
+      font-size:27px;
+      line-height:1.05;
+      font-weight:900;
+      color:#1F2933;
+      letter-spacing:-0.035em;
+      white-space:nowrap;
+    ">
+      ${formatCurrency(totalCogs)}
+    </span>
+  `;
+
+  $('kpiCogsMeta').innerHTML = `
+    <div style="
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      width:100%;
+    ">
+      <span style="
+        font-size:12px;
+        font-weight:800;
+        color:rgba(80, 96, 58, 0.74);
+      ">
+        Revenue base
+      </span>
+
+      <span style="
+        font-size:13px;
+        font-weight:900;
+        color:#50603A;
+        white-space:nowrap;
+      ">
+        ${formatCurrency(revenueAmount)}
+      </span>
+    </div>
+  `;
+}
+
+function ensureKpiCard({ id, labelId, valueId, metaId, title }) {
+  let card = $(id);
+
+  if (!card) {
+    const grid = document.querySelector('.kpi-grid');
+
+    card = document.createElement('article');
+    card.className = 'kpi-card';
+    card.id = id;
+
+    card.innerHTML = `
+      <p id="${labelId}">${title}</p>
+      <h3 id="${valueId}">IDR 0</h3>
+      <div id="${metaId}"></div>
+    `;
+
+    grid.appendChild(card);
+  }
+
+  return card;
+}
+
+function styleReportKpiCard(card, type) {
+  if (!card) return;
+
+  Object.assign(card.style, {
+    position: 'relative',
+    overflow: 'hidden',
+    minHeight: '145px',
+    padding: '18px 20px 16px',
+    border: '1px solid rgba(80, 96, 58, 0.18)',
+    background: type === 'margin'
+      ? 'linear-gradient(135deg, rgba(80, 96, 58, 0.10), #FFFFFF 58%)'
+      : '#FFFFFF',
+    boxShadow: '0 10px 24px rgba(15, 23, 42, 0.06)'
+  });
+
+  const title = card.querySelector('p');
+  const meta = card.querySelector('div[id$="Meta"]');
+
+  if (title) {
+    Object.assign(title.style, {
+      fontSize: '12px',
+      lineHeight: '1.15',
+      fontWeight: '850',
+      letterSpacing: '0.045em',
+      color: '#50603A',
+      textTransform: 'uppercase',
+      marginBottom: '20px',
+      whiteSpace: 'nowrap'
+    });
+  }
+
+  if (meta) {
+    Object.assign(meta.style, {
+      marginTop: '16px',
+      paddingTop: '11px',
+      borderTop: '1px solid rgba(80, 96, 58, 0.14)',
+      fontSize: '12px',
+      lineHeight: '1.2'
+    });
+  }
 }
 
 function renderMonthlyTargetCard(totalAmount) {
@@ -1208,6 +1512,7 @@ function compareDateValue(a, b) {
 
 function drawChart(id, data) {
   const element = $(id);
+
   if (!data || !data.length) {
     element.innerHTML = '<div class="empty-state">No report data.</div>';
     return;
@@ -1224,10 +1529,12 @@ function drawChart(id, data) {
   const qtyAxisMax = maxQty * 1.25;
   const step = plotWidth / Math.max(data.length, 1);
   const barWidth = Math.min(58, Math.max(24, step * 0.5));
+
   const x = (index) => padding.left + step * index + step / 2;
   const yAmount = (value) => padding.top + plotHeight - (numberValue(value) / amountAxisMax) * plotHeight;
   const yQty = (value) => padding.top + plotHeight - (numberValue(value) / qtyAxisMax) * plotHeight;
   const safe = (value) => escapeHtml(String(value));
+
   const shortAmount = (value) => {
     const number = numberValue(value);
     if (number >= 1000000000) return `${(number / 1000000000).toFixed(1)}B`;
@@ -1235,44 +1542,239 @@ function drawChart(id, data) {
     if (number >= 1000) return `${(number / 1000).toFixed(0)}K`;
     return formatNumber(number);
   };
+
   const shortQty = (value) => formatNumber(value);
   const ticks = [0, 0.25, 0.5, 0.75, 1];
+
   const amountAxis = ticks.map((ratio) => {
     const y = padding.top + plotHeight - ratio * plotHeight;
-    return `<line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"></line><text x="${padding.left - 14}" y="${y + 4}" text-anchor="end" class="axis-label amount-axis-label">${safe(shortAmount(amountAxisMax * ratio))}</text>`;
+
+    return `
+      <line
+        x1="${padding.left}"
+        y1="${y}"
+        x2="${width - padding.right}"
+        y2="${y}"
+        class="grid-line"
+      ></line>
+
+      <text
+        x="${padding.left - 14}"
+        y="${y + 4}"
+        text-anchor="end"
+        class="axis-label amount-axis-label"
+      >
+        ${safe(shortAmount(amountAxisMax * ratio))}
+      </text>
+    `;
   }).join('');
+
   const qtyAxis = ticks.map((ratio) => {
     const y = padding.top + plotHeight - ratio * plotHeight;
-    return `<text x="${width - padding.right + 14}" y="${y + 4}" text-anchor="start" class="axis-label qty-axis-label">${safe(shortQty(qtyAxisMax * ratio))}</text>`;
+
+    return `
+      <text
+        x="${width - padding.right + 14}"
+        y="${y + 4}"
+        text-anchor="start"
+        class="axis-label qty-axis-label"
+      >
+        ${safe(shortQty(qtyAxisMax * ratio))}
+      </text>
+    `;
   }).join('');
-  const axisTitles = `<text x="${padding.left}" y="24" text-anchor="start" class="axis-title amount-title">Sales Amount</text><text x="${width - padding.right}" y="24" text-anchor="end" class="axis-title qty-title">Qty Sold</text>`;
+
+  const axisTitles = `
+    <text
+      x="${padding.left}"
+      y="24"
+      text-anchor="start"
+      class="axis-title amount-title"
+    >
+      Sales Amount
+    </text>
+
+    <text
+      x="${width - padding.right}"
+      y="24"
+      text-anchor="end"
+      class="axis-title qty-title"
+    >
+      Qty Sold
+    </text>
+  `;
+
   const highestAmount = Math.max(...data.map((item) => numberValue(item.amount)));
+
   const bars = data.map((item, index) => {
     const amount = numberValue(item.amount);
     const barHeight = padding.top + plotHeight - yAmount(amount);
     const barX = x(index) - barWidth / 2;
     const barY = yAmount(amount);
-    const labelInside = barHeight >= 32;
-    const labelY = labelInside ? barY + 18 : barY - 8;
-    const labelClass = labelInside ? 'bar-label inside' : 'bar-label outside';
-    const barClass = amount === highestAmount ? 'amount-bar max-bar' : 'amount-bar';
-    return `<g class="bar-group"><rect x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="9" class="${barClass}"><title>${safe(item.label)} | Amount: ${safe(formatCurrency(amount))}</title></rect><text x="${x(index)}" y="${labelY}" text-anchor="middle" class="${labelClass}">${safe(shortAmount(amount))}</text></g>`;
+    const barClass = amount === highestAmount
+      ? 'amount-bar max-bar chart-hover'
+      : 'amount-bar chart-hover';
+
+    const tooltip = `${item.label} | Amount: ${formatCurrency(amount)} | Qty: ${formatNumber(item.qty)}`;
+
+    return `
+      <rect
+        x="${barX}"
+        y="${barY}"
+        width="${barWidth}"
+        height="${barHeight}"
+        rx="9"
+        class="${barClass}"
+        data-tooltip="${safe(tooltip)}"
+      ></rect>
+    `;
   }).join('');
-  const linePoints = data.map((item, index) => `${x(index)},${yQty(item.qty)}`).join(' ');
+
+  const linePoints = data
+    .map((item, index) => `${x(index)},${yQty(item.qty)}`)
+    .join(' ');
+
   const qtyDots = data.map((item, index) => {
     const qty = numberValue(item.qty);
     const dotX = x(index);
     const dotY = yQty(qty);
-    const labelX = dotX + 10;
-    const labelY = dotY - 12;
-    return `<g class="qty-point"><circle cx="${dotX}" cy="${dotY}" r="5.5" class="qty-dot"><title>${safe(item.label)} | Qty: ${safe(formatNumber(qty))}</title></circle><rect x="${labelX - 4}" y="${labelY - 14}" width="${Math.max(34, String(shortQty(qty)).length * 8)}" height="18" rx="8" class="qty-label-bg"></rect><text x="${labelX}" y="${labelY}" text-anchor="start" class="qty-label">${safe(shortQty(qty))}</text></g>`;
-  }).join('');
-  const xLabels = data.map((item, index) => `<text x="${x(index)}" y="${height - 42}" text-anchor="end" transform="rotate(-35 ${x(index)} ${height - 42})" class="x-axis-label">${safe(item.label)}</text>`).join('');
-  const averageAmount = data.reduce((sum, item) => sum + numberValue(item.amount), 0) / data.length;
-  const averageY = yAmount(averageAmount);
-  const averageLine = `<line x1="${padding.left}" y1="${averageY}" x2="${width - padding.right}" y2="${averageY}" class="average-line"></line><text x="${width - padding.right - 8}" y="${averageY - 6}" text-anchor="end" class="average-label">Avg Amount ${safe(shortAmount(averageAmount))}</text>`;
+    const tooltip = `${item.label} | Qty: ${formatNumber(qty)} | Amount: ${formatCurrency(item.amount)}`;
 
-  element.innerHTML = `<svg class="combo-chart advanced-chart" viewBox="0 0 ${width} ${height}" role="img"><rect x="0" y="0" width="${width}" height="${height}" class="chart-bg"></rect>${axisTitles}${amountAxis}${qtyAxis}${averageLine}<line x1="${padding.left}" y1="${padding.top + plotHeight}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="axis-line"></line><line x1="${width - padding.right}" y1="${padding.top}" x2="${width - padding.right}" y2="${padding.top + plotHeight}" class="right-axis-line"></line><g class="amount-bars">${bars}</g><polyline class="qty-line" points="${linePoints}"></polyline><g class="qty-dots">${qtyDots}</g><g class="x-labels">${xLabels}</g></svg>`;
+    return `
+      <circle
+        cx="${dotX}"
+        cy="${dotY}"
+        r="5.8"
+        class="qty-dot chart-hover"
+        data-tooltip="${safe(tooltip)}"
+      ></circle>
+    `;
+  }).join('');
+
+  const xLabels = data.map((item, index) => `
+    <text
+      x="${x(index)}"
+      y="${height - 42}"
+      text-anchor="end"
+      transform="rotate(-35 ${x(index)} ${height - 42})"
+      class="x-axis-label"
+    >
+      ${safe(item.label)}
+    </text>
+  `).join('');
+
+  const averageAmount = data.reduce((sum, item) => {
+    return sum + numberValue(item.amount);
+  }, 0) / data.length;
+
+  const averageY = yAmount(averageAmount);
+
+  const averageLine = `
+    <line
+      x1="${padding.left}"
+      y1="${averageY}"
+      x2="${width - padding.right}"
+      y2="${averageY}"
+      class="average-line"
+    ></line>
+
+    <text
+      x="${width - padding.right - 8}"
+      y="${averageY - 6}"
+      text-anchor="end"
+      class="average-label"
+    >
+      Avg Amount ${safe(shortAmount(averageAmount))}
+    </text>
+  `;
+
+  element.style.position = 'relative';
+
+  element.innerHTML = `
+    <div id="${id}Tooltip" style="
+      position:absolute;
+      z-index:20;
+      pointer-events:none;
+      opacity:0;
+      transform:translateY(4px);
+      transition:opacity 140ms ease, transform 140ms ease;
+      background:#FFFFFF;
+      color:#1F2933;
+      border:1px solid rgba(80, 96, 58, 0.22);
+      box-shadow:0 10px 24px rgba(15, 23, 42, 0.14);
+      border-radius:12px;
+      padding:9px 11px;
+      font-size:12px;
+      font-weight:750;
+      white-space:nowrap;
+    "></div>
+
+    <svg class="combo-chart advanced-chart" viewBox="0 0 ${width} ${height}" role="img">
+      <style>
+        .chart-hover {
+          transition: opacity 160ms ease, filter 160ms ease;
+          cursor: pointer;
+        }
+
+        .chart-hover:hover {
+          opacity: 0.82;
+          filter: drop-shadow(0 5px 8px rgba(80, 96, 58, 0.28));
+        }
+      </style>
+
+      <rect x="0" y="0" width="${width}" height="${height}" class="chart-bg"></rect>
+      ${axisTitles}
+      ${amountAxis}
+      ${qtyAxis}
+      ${averageLine}
+
+      <line
+        x1="${padding.left}"
+        y1="${padding.top + plotHeight}"
+        x2="${width - padding.right}"
+        y2="${padding.top + plotHeight}"
+        class="axis-line"
+      ></line>
+
+      <line
+        x1="${width - padding.right}"
+        y1="${padding.top}"
+        x2="${width - padding.right}"
+        y2="${padding.top + plotHeight}"
+        class="right-axis-line"
+      ></line>
+
+      <g class="amount-bars">${bars}</g>
+      <polyline class="qty-line" points="${linePoints}"></polyline>
+      <g class="qty-dots">${qtyDots}</g>
+      <g class="x-labels">${xLabels}</g>
+    </svg>
+  `;
+
+  attachChartTooltip(element, id);
+}
+
+function attachChartTooltip(container, chartId) {
+  const tooltip = $(`${chartId}Tooltip`);
+
+  if (!tooltip) return;
+
+  container.querySelectorAll('.chart-hover').forEach((item) => {
+    item.addEventListener('mousemove', (event) => {
+      const rect = container.getBoundingClientRect();
+
+      tooltip.textContent = item.dataset.tooltip || '';
+      tooltip.style.left = `${event.clientX - rect.left + 12}px`;
+      tooltip.style.top = `${event.clientY - rect.top - 12}px`;
+      tooltip.style.opacity = '1';
+      tooltip.style.transform = 'translateY(0)';
+    });
+
+    item.addEventListener('mouseleave', () => {
+      tooltip.style.opacity = '0';
+      tooltip.style.transform = 'translateY(4px)';
+    });
+  });
 }
 
 function exportByType(type) {
