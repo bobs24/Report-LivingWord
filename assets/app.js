@@ -980,7 +980,7 @@ function renderReportKpiCards({
 
   if (!qtyCard || !amountCard || !transactionsCard || !topProductCard) return;
 
-  styleUnifiedKpiCard(qtyCard, 'Activity');
+  styleUnifiedKpiCard(qtyCard, 'Qty');
   styleUnifiedKpiCard(amountCard, monthlyTargetBadge(totalAmount));
   styleUnifiedKpiCard(transactionsCard, 'Cost');
   styleUnifiedKpiCard(topProductCard, 'Margin');
@@ -1261,19 +1261,20 @@ function styleSummaryTable(tableId) {
 function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransaction) {
   const card = $('kpiQty')?.closest('.kpi-card');
 
-  setKpiTitle(card, 'Transactions', 'Qty Sold');
+  // Main title now focuses on Qty Sold.
+  setKpiTitle(card, 'Qty Sold', 'Transactions');
 
   $('kpiQty').innerHTML = `
     <div style="
       margin-top:18px;
-      font-size:29px;
+      font-size:31px;
       line-height:1;
       font-weight:900;
       color:#50603A;
-      letter-spacing:-0.035em;
+      letter-spacing:-0.04em;
       white-space:nowrap;
     ">
-      ${formatNumber(transactions)}
+      ${formatNumber(totalQty)}
     </div>
 
     <div style="
@@ -1286,8 +1287,13 @@ function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransact
       font-size:12px;
       line-height:1.2;
     ">
-      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">Qty Sold</span>
-      <span style="font-weight:900; color:#1F2933; white-space:nowrap;">${formatNumber(totalQty)}</span>
+      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">
+        Transactions
+      </span>
+
+      <span style="font-weight:900; color:#1F2933; white-space:nowrap;">
+        ${formatNumber(transactions)}
+      </span>
     </div>
 
     <div style="
@@ -1298,7 +1304,10 @@ function renderTransactionsQtyCard(transactions, totalQty, averageQtyPerTransact
       font-size:12px;
       line-height:1.2;
     ">
-      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">Avg Qty / Trx</span>
+      <span style="font-weight:800; color:rgba(80, 96, 58, 0.72);">
+        Avg Qty / Trx
+      </span>
+
       <span style="font-weight:900; color:#50603A; white-space:nowrap;">
         ${averageQtyPerTransaction.toLocaleString('id-ID', { maximumFractionDigits: 2 })}
       </span>
