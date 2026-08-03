@@ -18,6 +18,8 @@ const MONTHS = [
   { n: 10, name: 'October' }, { n: 11, name: 'November' }, { n: 12, name: 'December' }
 ];
 
+const MONTHLY_SALES_TARGET = 25000000;
+
 const INVOICE_THEME = {
   primary: '#50603A',
   accent: '#50603A',
@@ -89,7 +91,10 @@ function bindEvents() {
   $('submitOrderButton').onclick = submitSalesOrder;
   $('stockForm').onsubmit = submitStock;
   $('transferForm').onsubmit = submitTransfer;
-  $('reportType').onchange = renderReportInputs;
+  $('reportType').onchange = () => {
+    renderReportInputs();
+    resetMonthlyTargetCard();
+  };
   $('loadReportButton').addEventListener('click', loadReport);
   document.querySelectorAll('[data-export]').forEach((button) => button.onclick = () => exportByType(button.dataset.export));
   ['salesSearch', 'stockSearch', 'transferSearch', 'movementSearch'].forEach((id) => $(id).addEventListener('input', renderMainTables));
@@ -749,12 +754,78 @@ function buildReport(rows) {
   state.reportTimeSeries = [...dateMap.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)));
 
   $('kpiQty').textContent = formatNumber(totalQty);
-  $('kpiAmount').textContent = formatCurrency(totalAmount);
+  renderMonthlyTargetCard(totalAmount);
   $('kpiTransactions').textContent = formatNumber(rows.length);
   $('kpiTopProduct').textContent = state.reportProductSummary[0]?.product_name || '-';
   renderTable('productSummaryTable', state.reportProductSummary, columns.productSummary);
   renderTable('channelSummaryTable', state.reportChannelSummary, columns.channelSummary);
   drawChart('trendChart', state.reportTimeSeries);
+}
+
+function renderMonthlyTargetCard(totalAmount) {
+  const amountElement = $('kpiAmount');
+  const card = amountElement?.closest('.kpi-card');
+  const labelElement = card?.querySelector('p');
+
+  if (!amountElement || !card) return;
+
+  const isMonthly = $('reportType')?.value === 'monthly';
+  let badge = card.querySelector('#monthlyTargetBadge');
+
+  if (!isMonthly) {
+    if (labelElement) labelElement.textContent = 'Total Sales Amount';
+    amountElement.textContent = formatCurrency(totalAmount);
+    if (badge) badge.remove();
+    return;
+  }
+
+  const percentage = MONTHLY_SALES_TARGET > 0
+    ? totalAmount / MONTHLY_SALES_TARGET * 100
+    : 0;
+
+  const isTargetPassed = percentage >= 100;
+
+  card.style.position = 'relative';
+
+  if (labelElement) {
+    labelElement.textContent = 'Total Sales Amount / Monthly Target';
+  }
+
+  amountElement.textContent = `${formatCurrency(totalAmount)} / ${formatCurrency(MONTHLY_SALES_TARGET)}`;
+
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'monthlyTargetBadge';
+    card.appendChild(badge);
+  }
+
+  badge.textContent = `${percentage.toLocaleString('id-ID', { maximumFractionDigits: 1 })}% of target`;
+
+  Object.assign(badge.style, {
+    position: 'absolute',
+    top: '10px',
+    right: '12px',
+    padding: '5px 10px',
+    borderRadius: '999px',
+    fontSize: '12px',
+    fontWeight: '800',
+    lineHeight: '1',
+    background: isTargetPassed ? '#DCFCE7' : '#FEF3C7',
+    color: isTargetPassed ? '#166534' : '#92400E',
+    border: isTargetPassed ? '1px solid #86EFAC' : '1px solid #FCD34D',
+    boxShadow: '0 4px 10px rgba(0, 0, 0, 0.08)'
+  });
+}
+
+function resetMonthlyTargetCard() {
+  const amountElement = $('kpiAmount');
+  const card = amountElement?.closest('.kpi-card');
+  const labelElement = card?.querySelector('p');
+  const badge = card?.querySelector('#monthlyTargetBadge');
+
+  if (labelElement) labelElement.textContent = 'Total Sales Amount';
+  if (amountElement) amountElement.textContent = 'IDR 0';
+  if (badge) badge.remove();
 }
 
 function addSummary(map, key, initialValue, qty, amount, countTransaction = false) {
