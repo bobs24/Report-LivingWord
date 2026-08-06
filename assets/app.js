@@ -49,7 +49,7 @@ const state = {
   reportChannelSummary: [],
   reportTimeSeries: [],
   stockIndex: {
-    allProducts: [], availableProducts: [], allSkus: [], availableSkus: [],
+    allLocations: [], allProducts: [], availableProducts: [], allSkus: [], availableSkus: [],
     bySku: {}, byProduct: {}, bySkuLocation: {}, byProductLocation: {},
     availableSkusByLocation: {}, availableProductsByLocation: {}
   }
@@ -66,12 +66,41 @@ const columns = {
   productSummary: ['product_name', 'qty', 'amount']
 };
 
+const uiColumns = {
+  sales: [
+    'status',
+    'action',
+    'sale_date',
+    'order_number',
+    'customer_name',
+    'channel',
+    'sales_product',
+    'qty',
+    'total_price'
+  ],
+
+  // Stock table visible columns.
+  stock: [
+    'action',
+    'location',
+    'sku',
+    'product_name',
+    'qty',
+    'price',
+    'consign_price',
+    'cogs',
+    'last_sold'
+  ]
+};
+
 const $ = (id) => document.getElementById(id);
 
 document.addEventListener('DOMContentLoaded', async () => {
   init();
   setDefaultDates();
   bindEvents();
+  initializeCompactTableStyles();
+  initializeSalesInfoTooltips();
   renderReportInputs();
 
   // Make Report KPI cards look consistent before user loads report.
@@ -90,6 +119,485 @@ function init() {
     return;
   }
   state.client = supabase.createClient(APP_CONFIG.SUPABASE_URL, APP_CONFIG.SUPABASE_ANON_KEY);
+}
+
+function initializeCompactTableStyles() {
+  // Prevent the same style from being injected twice.
+  if ($('compactTableUiStyles')) return;
+
+  const style = document.createElement('style');
+  style.id = 'compactTableUiStyles';
+
+  style.textContent = `
+    /* =====================================================
+       Compact Sales and Stock tables
+       Visual-only styling
+       ===================================================== */
+
+    #salesTable,
+    #stockTable {
+      overflow-x: hidden;
+      max-width: 100%;
+    }
+
+    #salesTable table,
+    #stockTable table {
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+      table-layout: fixed;
+    }
+
+    #salesTable th,
+    #salesTable td,
+    #stockTable th,
+    #stockTable td {
+      padding: 9px 7px;
+      font-size: 10.5px;
+      line-height: 1.3;
+      vertical-align: middle;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    #salesTable th,
+    #stockTable th {
+      font-size: 8.5px;
+      line-height: 1.15;
+      font-weight: 850;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      color: #50603A;
+    }
+
+    /* =====================================================
+       Sales table widths
+       ===================================================== */
+
+    #salesTable th:nth-child(1),
+    #salesTable td:nth-child(1) {
+      width: 7%;
+      text-align: center;
+    }
+
+    #salesTable th:nth-child(2),
+    #salesTable td:nth-child(2) {
+      width: 13%;
+      text-align: center;
+      overflow: visible;
+    }
+
+    #salesTable th:nth-child(3),
+    #salesTable td:nth-child(3) {
+      width: 9%;
+      text-align: center;
+    }
+
+    #salesTable th:nth-child(4),
+    #salesTable td:nth-child(4) {
+      width: 10%;
+    }
+
+    #salesTable th:nth-child(5),
+    #salesTable td:nth-child(5) {
+      width: 12%;
+    }
+
+    #salesTable th:nth-child(6),
+    #salesTable td:nth-child(6) {
+      width: 9%;
+      text-align: center;
+    }
+
+    #salesTable th:nth-child(7),
+    #salesTable td:nth-child(7) {
+      width: 20%;
+    }
+
+    #salesTable th:nth-child(8),
+    #salesTable td:nth-child(8) {
+      width: 7%;
+      text-align: center;
+    }
+
+    #salesTable th:nth-child(9),
+    #salesTable td:nth-child(9) {
+      width: 13%;
+      text-align: right;
+    }
+
+    /* =====================================================
+       Stock table widths
+       ===================================================== */
+
+    #stockTable th:nth-child(1),
+    #stockTable td:nth-child(1) {
+      width: 10%;
+      text-align: center;
+    }
+
+    #stockTable th:nth-child(2),
+    #stockTable td:nth-child(2) {
+      width: 15%;
+    }
+
+    #stockTable th:nth-child(3),
+    #stockTable td:nth-child(3) {
+      width: 8%;
+      text-align: center;
+    }
+
+    #stockTable th:nth-child(4),
+    #stockTable td:nth-child(4) {
+      width: 22%;
+    }
+
+    #stockTable th:nth-child(5),
+    #stockTable td:nth-child(5) {
+      width: 7%;
+      text-align: center;
+    }
+
+    #stockTable th:nth-child(6),
+    #stockTable td:nth-child(6),
+    #stockTable th:nth-child(7),
+    #stockTable td:nth-child(7),
+    #stockTable th:nth-child(8),
+    #stockTable td:nth-child(8) {
+      width: 11%;
+      text-align: right;
+    }
+
+    #stockTable th:nth-child(9),
+    #stockTable td:nth-child(9) {
+      width: 10%;
+      text-align: center;
+    }
+
+    /* Combined SKU and Product Name. */
+
+    .compact-product-sku {
+      margin-bottom: 3px;
+      font-size: 9.5px;
+      line-height: 1;
+      font-weight: 900;
+      color: #50603A;
+      letter-spacing: 0.03em;
+    }
+
+    .compact-product-name {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-size: 10.5px;
+      line-height: 1.25;
+      font-weight: 700;
+      color: #1F2933;
+    }
+
+    /* Existing Action column controls. */
+
+    .sales-action-group {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 5px;
+      overflow: visible;
+    }
+
+    /* Circular information icon. */
+
+    .sales-info-wrapper {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      overflow: visible;
+    }
+
+    .sales-info-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 27px;
+      height: 27px;
+      flex: 0 0 27px;
+      padding: 0;
+      border: 1.7px solid #50603A;
+      border-radius: 50%;
+      background: #FFFFFF;
+      color: #50603A;
+      cursor: help;
+      transition:
+        color 150ms ease,
+        background 150ms ease,
+        box-shadow 150ms ease,
+        transform 150ms ease;
+    }
+
+    .sales-info-button > span {
+      display: block;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 15px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .sales-info-button:hover,
+    .sales-info-button:focus-visible {
+      background: #50603A;
+      color: #FFFFFF;
+      box-shadow: 0 7px 18px rgba(80, 96, 58, 0.24);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    /* Floating Sales details panel. */
+
+    .sales-info-tooltip {
+      position: fixed;
+      z-index: 9999;
+      display: none;
+      width: min(430px, calc(100vw - 32px));
+      padding: 16px;
+      border: 1px solid rgba(80, 96, 58, 0.20);
+      border-radius: 16px;
+      background: #FFFFFF;
+      color: #1F2933;
+      text-align: left;
+      box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+    }
+
+    .sales-info-tooltip.is-visible {
+      display: block;
+    }
+
+    .sales-info-tooltip-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(80, 96, 58, 0.13);
+    }
+
+    .sales-info-tooltip-title,
+    .sales-info-tooltip-subtitle {
+      display: block;
+    }
+
+    .sales-info-tooltip-title {
+      font-size: 14px;
+      line-height: 1.2;
+      font-weight: 900;
+      color: #50603A;
+    }
+
+    .sales-info-tooltip-subtitle {
+      margin-top: 3px;
+      font-size: 10px;
+      line-height: 1.2;
+      font-weight: 750;
+      color: rgba(80, 96, 58, 0.66);
+    }
+
+    .sales-info-tooltip-status {
+      display: inline-flex;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(80, 96, 58, 0.09);
+      color: #50603A;
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+    }
+
+    .sales-info-tooltip-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 11px 16px;
+    }
+
+    .sales-info-item {
+      display: block;
+      min-width: 0;
+    }
+
+    .sales-info-item > span {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 9px;
+      line-height: 1.15;
+      font-weight: 800;
+      color: rgba(80, 96, 58, 0.66);
+      text-transform: uppercase;
+      letter-spacing: 0.035em;
+    }
+
+    .sales-info-item > strong {
+      display: block;
+      overflow-wrap: anywhere;
+      font-size: 11px;
+      line-height: 1.3;
+      font-weight: 800;
+      color: #1F2933;
+    }
+
+    .sales-info-tooltip-remark {
+      display: block;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(80, 96, 58, 0.13);
+    }
+
+    .sales-info-tooltip-remark > span {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 9px;
+      font-weight: 800;
+      color: rgba(80, 96, 58, 0.66);
+      text-transform: uppercase;
+    }
+
+    .sales-info-tooltip-remark > strong {
+      display: block;
+      font-size: 11px;
+      line-height: 1.35;
+      font-weight: 700;
+      color: #1F2933;
+    }
+
+    @media (max-width: 700px) {
+      .sales-info-tooltip-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function initializeSalesInfoTooltips() {
+  // Event delegation continues working after table re-rendering.
+  document.addEventListener('pointerover', (event) => {
+    const button = event.target.closest('.sales-info-button');
+    if (!button) return;
+
+    const tooltip = button
+      .closest('.sales-info-wrapper')
+      ?.querySelector('.sales-info-tooltip');
+
+    if (!tooltip) return;
+
+    showSalesInfoTooltip(button, tooltip);
+  });
+
+  document.addEventListener('pointerout', (event) => {
+    const button = event.target.closest('.sales-info-button');
+
+    if (!button) return;
+
+    // Do not close when the pointer is only moving between
+    // elements inside the same information button.
+    if (
+      event.relatedTarget &&
+      button.contains(event.relatedTarget)
+    ) {
+      return;
+    }
+
+    hideAllSalesInfoTooltips();
+  });
+
+  // Keyboard accessibility.
+  document.addEventListener('focusin', (event) => {
+    const button = event.target.closest('.sales-info-button');
+    if (!button) return;
+
+    const tooltip = button
+      .closest('.sales-info-wrapper')
+      ?.querySelector('.sales-info-tooltip');
+
+    if (!tooltip) return;
+
+    showSalesInfoTooltip(button, tooltip);
+  });
+
+  document.addEventListener('focusout', (event) => {
+    if (event.target.closest('.sales-info-button')) {
+      hideAllSalesInfoTooltips();
+    }
+  });
+
+  // Close panels during scrolling or resizing.
+  window.addEventListener(
+    'scroll',
+    hideAllSalesInfoTooltips,
+    true
+  );
+
+  window.addEventListener(
+    'resize',
+    hideAllSalesInfoTooltips
+  );
+}
+
+function showSalesInfoTooltip(button, tooltip) {
+  hideAllSalesInfoTooltips();
+
+  // Make visible first so dimensions can be measured.
+  tooltip.classList.add('is-visible');
+
+  const buttonRect = button.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const gap = 10;
+  const edge = 12;
+
+  // Align the tooltip to the right edge of the Info button.
+  let left = buttonRect.right - tooltipRect.width;
+  let top = buttonRect.bottom + gap;
+
+  // Keep inside horizontal viewport.
+  left = Math.max(
+    edge,
+    Math.min(
+      left,
+      viewportWidth - tooltipRect.width - edge
+    )
+  );
+
+  // Show above the icon when space below is insufficient.
+  if (top + tooltipRect.height > viewportHeight - edge) {
+    top = buttonRect.top - tooltipRect.height - gap;
+  }
+
+  // Keep inside vertical viewport.
+  top = Math.max(
+    edge,
+    Math.min(
+      top,
+      viewportHeight - tooltipRect.height - edge
+    )
+  );
+
+  tooltip.style.left = `${left}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function hideAllSalesInfoTooltips() {
+  document
+    .querySelectorAll('.sales-info-tooltip.is-visible')
+    .forEach((tooltip) => {
+      tooltip.classList.remove('is-visible');
+    });
 }
 
 function bindEvents() {
@@ -731,26 +1239,56 @@ function handleTableActions(event) {
 }
 
 function renderMainTables() {
-  const salesRows = filterRows(state.sales, $('salesSearch').value);
+  // Filter against complete Sales objects.
+  // Hidden Sales fields remain searchable.
+  const salesRows = filterRows(
+    state.sales,
+    $('salesSearch').value
+  );
+
+  // Filter against complete Stock objects.
+  // Hidden tier prices and updated date remain searchable.
+  const filteredStockRows = filterRows(
+    state.stock.filter((row) =>
+      (row.status || 'ACTIVE') === 'ACTIVE'
+    ),
+    $('stockSearch').value
+  );
+
   const activeStockRows = sortStockRows(
-    filterRows(
-      state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'),
-      $('stockSearch').value
-    ).map((row) => ({
+    filteredStockRows.map((row) => ({
       ...row,
       __actionType: 'stock',
       last_sold: latestSalesDateBySku(row.sku)
     }))
   );
-  const activeTransferRows = filterRows(state.transfers.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'), $('transferSearch').value).map((row) => ({ ...row, __actionType: 'transfer' }));
-  const movementRows = filterRows(state.movements, $('movementSearch').value);
 
-  renderTable('salesTable', salesRows, columns.sales);
-  renderTable('stockTable', activeStockRows, columns.stock);
+  const activeTransferRows = filterRows(
+    state.transfers.filter((row) =>
+      (row.status || 'ACTIVE') === 'ACTIVE'
+    ),
+    $('transferSearch').value
+  ).map((row) => ({
+    ...row,
+    __actionType: 'transfer'
+  }));
+
+  const movementRows = filterRows(
+    state.movements,
+    $('movementSearch').value
+  );
+
+  // Use compact UI-only columns for Sales and Stock.
+  renderTable('salesTable', salesRows, uiColumns.sales);
+  renderTable('stockTable', activeStockRows, uiColumns.stock);
+
+  // Transfer and Movement remain unchanged.
   renderTable('transferTable', activeTransferRows, columns.transfer);
   renderTable('movementTable', movementRows, columns.movement);
 
-  $('salesCountText').textContent = `Showing ${salesRows.length.toLocaleString()} of ${state.sales.length.toLocaleString()} loaded transactions.`;
+  $('salesCountText').textContent =
+    `Showing ${salesRows.length.toLocaleString()} of ` +
+    `${state.sales.length.toLocaleString()} loaded transactions.`;
 }
 
 function latestSalesDateBySku(sku) {
@@ -1597,9 +2135,15 @@ function renderTable(id, rows, tableColumns) {
         ${rows.map((row) => `
           <tr>
             ${tableColumns.map((column) => {
+              // These columns need access to the complete source row.
+              const rowBasedColumns = [
+                'action',
+                'sales_product'
+              ];
+
               const value = column === 'action' && id === 'draftTable'
                 ? row.action
-                : column === 'action'
+                : rowBasedColumns.includes(column)
                   ? row
                   : row[column];
 
@@ -1974,7 +2518,21 @@ function exportByType(type) {
   let tableColumns = [];
 
   if (type === 'sales') { rows = filterRows(state.sales, $('salesSearch').value); fileName = 'sales_export.xlsx'; tableColumns = columns.sales.filter((column) => column !== 'action'); }
-  if (type === 'stock') { rows = filterRows(state.stock, $('stockSearch').value); fileName = 'stock_export.xlsx'; tableColumns = columns.stock.filter((column) => column !== 'action'); }
+  if (type === 'stock') {
+    rows = filterRows(
+      state.stock.map((row) => ({
+        ...row,
+        last_sold: latestSalesDateBySku(row.sku)
+      })),
+      $('stockSearch').value
+    );
+
+    fileName = 'stock_export.xlsx';
+
+    tableColumns = columns.stock.filter(
+      (column) => column !== 'action'
+    );
+  }
   if (type === 'transfer') { rows = filterRows(state.transfers, $('transferSearch').value); fileName = 'transfer_stock_export.xlsx'; tableColumns = columns.transfer.filter((column) => column !== 'action'); }
   if (type === 'movements') { rows = filterRows(state.movements, $('movementSearch').value); fileName = 'stock_movements_export.xlsx'; tableColumns = columns.movement; }
 
@@ -2063,67 +2621,456 @@ function syncSkuProduct(input) {
 }
 
 function cell(value, column) {
-  if (column === 'stock_status') {
-    const className = value === 'Out of Stock' ? 'badge badge-out' : value === 'Low Stock' ? 'badge badge-low' : 'badge badge-ok';
-    return `<span class="${className}">${escapeHtml(value)}</span>`;
+  // =======================================================
+  // UI-only combined Sales product column
+  // =======================================================
+
+  if (column === 'sales_product') {
+    const row = value || {};
+
+    // Keep safe fallback values when source data is empty.
+    const sku = cleanText(row.sku) || '-';
+    const productName = cleanText(row.product_name) || '-';
+
+    return `
+      <div class="compact-product-cell">
+        <div class="compact-product-sku">
+          ${escapeHtml(sku)}
+        </div>
+
+        <div
+          class="compact-product-name"
+          title="${escapeHtml(productName)}"
+        >
+          ${escapeHtml(productName)}
+        </div>
+      </div>
+    `;
   }
+
+  // =======================================================
+  // Stock status display
+  // Kept for other table/export usages, although it is no
+  // longer included in the compact Stock UI columns.
+  // =======================================================
+
+  if (column === 'stock_status') {
+    const className =
+      value === 'Out of Stock'
+        ? 'badge badge-out'
+        : value === 'Low Stock'
+          ? 'badge badge-low'
+          : 'badge badge-ok';
+
+    return `
+      <span class="${className}">
+        ${escapeHtml(value)}
+      </span>
+    `;
+  }
+
+  // =======================================================
+  // Sales status display
+  // =======================================================
 
   if (column === 'status') {
     const status = value || 'ACTIVE';
-    const className = status === 'REVOKED' ? 'status-revoked' : 'status-active';
-    return `<span class="${className}">${escapeHtml(status)}</span>`;
+
+    const className =
+      status === 'REVOKED'
+        ? 'status-revoked'
+        : 'status-active';
+
+    return `
+      <span class="${className}">
+        ${escapeHtml(status)}
+      </span>
+    `;
   }
 
+  // =======================================================
+  // Action controls
+  // =======================================================
+
   if (column === 'action') {
+    // Draft-row actions.
     if (typeof value === 'number') {
-      return `<div class="draft-actions"><button class="icon-btn edit-line-btn" type="button" data-edit-line="${value}" title="Edit draft line">✎</button><button class="icon-btn remove-line-btn" type="button" data-remove-line="${value}" title="Remove draft line">×</button></div>`;
+      return `
+        <div class="draft-actions">
+          <button
+            class="icon-btn edit-line-btn"
+            type="button"
+            data-edit-line="${value}"
+            title="Edit draft line"
+          >
+            ✎
+          </button>
+
+          <button
+            class="icon-btn remove-line-btn"
+            type="button"
+            data-remove-line="${value}"
+            title="Remove draft line"
+          >
+            ×
+          </button>
+        </div>
+      `;
     }
 
     const row = value || {};
 
+    // Stock-row actions.
     if (row.__actionType === 'stock') {
-      return `<div class="draft-actions"><button class="icon-btn edit-line-btn" type="button" data-edit-stock-id="${escapeHtml(row.id)}" title="Edit stock">✎</button><button class="icon-btn remove-line-btn" type="button" data-remove-stock-id="${escapeHtml(row.id)}" title="Remove stock">×</button></div>`;
+      return `
+        <div class="draft-actions">
+          <button
+            class="icon-btn edit-line-btn"
+            type="button"
+            data-edit-stock-id="${escapeHtml(row.id)}"
+            title="Edit stock"
+          >
+            ✎
+          </button>
+
+          <button
+            class="icon-btn remove-line-btn"
+            type="button"
+            data-remove-stock-id="${escapeHtml(row.id)}"
+            title="Remove stock"
+          >
+            ×
+          </button>
+        </div>
+      `;
     }
 
+    // Transfer-row actions.
     if (row.__actionType === 'transfer') {
-      return `<div class="draft-actions"><button class="icon-btn remove-line-btn" type="button" data-remove-transfer-id="${escapeHtml(row.id)}" title="Remove transfer">×</button></div>`;
+      return `
+        <div class="draft-actions">
+          <button
+            class="icon-btn remove-line-btn"
+            type="button"
+            data-remove-transfer-id="${escapeHtml(row.id)}"
+            title="Remove transfer"
+          >
+            ×
+          </button>
+        </div>
+      `;
     }
 
-    if ((row.status || 'ACTIVE') === 'REVOKED') return '<span class="revoke-disabled">Revoked</span>';
+    // Revoked Sales rows retain the Info control,
+    // but Invoice and Revoke are unavailable.
+    if ((row.status || 'ACTIVE') === 'REVOKED') {
+      return `
+        <div class="sales-action-group">
+          ${salesInfoControl(row)}
 
-    const invoiceButton = cleanText(row.channel) === 'WA Order'
-      ? `<button class="icon-btn edit-line-btn" type="button" data-invoice-sales-id="${escapeHtml(row.id)}" title="Download invoice">🧾</button>`
-      : '';
-    const revokeButton = `<button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(row.id)}">Revoke</button>`;
-    return `<div class="draft-actions">${invoiceButton}${revokeButton}</div>`;
+          <span class="revoke-disabled">
+            Revoked
+          </span>
+        </div>
+      `;
+    }
+
+    // Invoice is available for WA Order and Konsinyasi.
+    const invoiceChannels = [
+      'WA Order',
+      'Konsinyasi'
+    ];
+
+    const invoiceButton =
+      invoiceChannels.includes(cleanText(row.channel))
+        ? `
+          <button
+            class="icon-btn edit-line-btn"
+            type="button"
+            data-invoice-sales-id="${escapeHtml(row.id)}"
+            title="Download invoice"
+            aria-label="Download invoice"
+          >
+            🧾
+          </button>
+        `
+        : '';
+
+    // Existing Sales revoke control.
+    const revokeButton = `
+      <button
+        class="revoke-btn"
+        type="button"
+        data-revoke-sales-id="${escapeHtml(row.id)}"
+      >
+        Revoke
+      </button>
+    `;
+
+    // All Sales controls use the existing Action column.
+    return `
+      <div class="sales-action-group">
+        ${invoiceButton}
+        ${salesInfoControl(row)}
+        ${revokeButton}
+      </div>
+    `;
   }
 
+  // Default cell output for normal fields.
   return escapeHtml(formatCell(value, column));
+}
+
+function salesInfoControl(row) {
+  // Prepare clean values for the professional Sales details panel.
+  const orderNumber =
+    cleanText(row.order_number) || 'No order number';
+
+  const customerName =
+    cleanText(row.customer_name) || '-';
+
+  const channel =
+    cleanText(row.channel) || '-';
+
+  const location =
+    cleanText(row.location) || '-';
+
+  const category =
+    cleanText(row.category) || '-';
+
+  const sku =
+    cleanText(row.sku) || '-';
+
+  const productName =
+    cleanText(row.product_name) || '-';
+
+  const createdBy =
+    cleanText(row.created_by) || '-';
+
+  const remark =
+    cleanText(row.remark) || '-';
+
+  const status =
+    cleanText(row.status) || 'ACTIVE';
+
+  return `
+    <span class="sales-info-wrapper">
+      <button
+        type="button"
+        class="sales-info-button"
+        aria-label="View sales details for ${escapeHtml(orderNumber)}"
+        title="View sales details"
+      >
+        <span aria-hidden="true">i</span>
+      </button>
+
+      <span
+        class="sales-info-tooltip"
+        role="tooltip"
+      >
+        <span class="sales-info-tooltip-header">
+          <span>
+            <span class="sales-info-tooltip-title">
+              Sales Details
+            </span>
+
+            <span class="sales-info-tooltip-subtitle">
+              ${escapeHtml(orderNumber)}
+            </span>
+          </span>
+
+          <span class="sales-info-tooltip-status">
+            ${escapeHtml(status)}
+          </span>
+        </span>
+
+        <span class="sales-info-tooltip-grid">
+          ${salesInfoItem(
+            'Customer',
+            customerName
+          )}
+
+          ${salesInfoItem(
+            'Channel',
+            channel
+          )}
+
+          ${salesInfoItem(
+            'Location',
+            location
+          )}
+
+          ${salesInfoItem(
+            'Category',
+            category
+          )}
+
+          ${salesInfoItem(
+            'SKU',
+            sku
+          )}
+
+          ${salesInfoItem(
+            'Product',
+            productName
+          )}
+
+          ${salesInfoItem(
+            'Unit Price',
+            formatCurrency(row.price)
+          )}
+
+          ${salesInfoItem(
+            'Quantity',
+            formatNumber(row.qty)
+          )}
+
+          ${salesInfoItem(
+            'Discount Type',
+            cleanText(row.discount_type) || '-'
+          )}
+
+          ${salesInfoItem(
+            'Discount Input',
+            formatDiscountInput(row)
+          )}
+
+          ${salesInfoItem(
+            'Discount Amount',
+            formatCurrency(row.discount)
+          )}
+
+          ${salesInfoItem(
+            'Shipping Fee',
+            formatCurrency(row.ongkos_kirim)
+          )}
+
+          ${salesInfoItem(
+            'Net Sales',
+            formatCurrency(row.total_price)
+          )}
+
+          ${salesInfoItem(
+            'Created By',
+            createdBy
+          )}
+        </span>
+
+        <span class="sales-info-tooltip-remark">
+          <span>Remark</span>
+
+          <strong>
+            ${escapeHtml(remark)}
+          </strong>
+        </span>
+      </span>
+    </span>
+  `;
+}
+
+function salesInfoItem(labelText, valueText) {
+  // Generate one consistent label and value pair
+  // inside the Sales information panel.
+  return `
+    <span class="sales-info-item">
+      <span>
+        ${escapeHtml(labelText)}
+      </span>
+
+      <strong>
+        ${escapeHtml(valueText)}
+      </strong>
+    </span>
+  `;
+}
+
+function formatDiscountInput(row) {
+  // Read the original discount type.
+  const discountType =
+    cleanText(row.discount_type);
+
+  // Convert the original input into a safe number.
+  const discountValue =
+    numberValue(row.discount_value);
+
+  // Show percentage input as a percentage.
+  if (discountType === 'PERCENT') {
+    return `${formatNumber(discountValue)}%`;
+  }
+
+  // Show amount input as currency.
+  return formatCurrency(discountValue);
 }
 
 async function downloadSalesInvoice(salesId) {
   if (!ensureReadyForWrite()) return;
 
   const selectedSale = state.sales.find((row) => row.id === salesId);
-  if (!selectedSale) return showMessage('Sales record not found.', 'err');
-  if (cleanText(selectedSale.channel) !== 'WA Order') return showMessage('Invoice is only available for WA Order.', 'err');
-  if ((selectedSale.status || 'ACTIVE') !== 'ACTIVE') return showMessage('Cannot download invoice for revoked sales.', 'err');
 
-  const invoiceNumber = cleanText(selectedSale.order_number) || selectedSale.id;
-  const customerName = cleanText(selectedSale.customer_name) || '-';
-  const invoiceRows = cleanText(selectedSale.order_number)
-    ? state.sales.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE' && cleanText(row.channel) === 'WA Order' && cleanText(row.order_number) === cleanText(selectedSale.order_number))
+  if (!selectedSale) {
+    return showMessage('Sales record not found.', 'err');
+  }
+
+  // Invoice can be generated for WA Order and Konsinyasi.
+  const invoiceChannels = ['WA Order', 'Konsinyasi'];
+
+  if (!invoiceChannels.includes(cleanText(selectedSale.channel))) {
+    return showMessage(
+      'Invoice is only available for WA Order and Konsinyasi.',
+      'err'
+    );
+  }
+
+  if ((selectedSale.status || 'ACTIVE') !== 'ACTIVE') {
+    return showMessage(
+      'Cannot download invoice for revoked sales.',
+      'err'
+    );
+  }
+
+  const invoiceNumber =
+    cleanText(selectedSale.order_number) || selectedSale.id;
+
+  const customerName =
+    cleanText(selectedSale.customer_name) || '-';
+
+  // Match the same active channel and same order number.
+  const selectedChannel = cleanText(selectedSale.channel);
+  const selectedOrderNumber = cleanText(selectedSale.order_number);
+
+  const invoiceRows = selectedOrderNumber
+    ? state.sales.filter((row) =>
+        (row.status || 'ACTIVE') === 'ACTIVE' &&
+        cleanText(row.channel) === selectedChannel &&
+        cleanText(row.order_number) === selectedOrderNumber
+      )
     : [selectedSale];
 
-  if (!invoiceRows.length) return showMessage('No invoice rows found.', 'err');
+  if (!invoiceRows.length) {
+    return showMessage('No invoice rows found.', 'err');
+  }
 
   try {
-    await generateInvoicePdf({ invoiceNumber, customerName, invoiceDate: selectedSale.sale_date, rows: invoiceRows });
+    await generateInvoicePdf({
+      invoiceNumber,
+      customerName,
+      invoiceDate: selectedSale.sale_date,
+      rows: invoiceRows
+    });
+
     await recordInvoiceDownload(invoiceNumber, customerName);
-    showMessage('Invoice downloaded and movement recorded.', 'ok');
+
+    showMessage(
+      'Invoice downloaded and movement recorded.',
+      'ok'
+    );
+
     await refreshAll();
   } catch (error) {
-    showMessage(error.message || 'Failed to generate invoice.', 'err');
+    showMessage(
+      error.message || 'Failed to generate invoice.',
+      'err'
+    );
   }
 }
 
@@ -2526,8 +3473,19 @@ function numberValue(value) {
 }
 
 function label(value) {
+  // UI-only Sales column titles.
+  if (value === 'sales_product') return 'SKU / Product';
+
+  // Shorter and cleaner visible titles.
+  if (value === 'sale_date') return 'Date';
+  if (value === 'order_number') return 'Order No.';
+  if (value === 'customer_name') return 'Customer';
+  if (value === 'total_price') return 'Net Sales';
+
+  // Existing custom titles.
   if (value === 'last_sold') return 'Last Sold';
   if (value === 'consign_price') return 'Consign Price';
+
   return String(value).replaceAll('_', ' ');
 }
 
