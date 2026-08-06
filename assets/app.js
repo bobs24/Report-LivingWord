@@ -48,6 +48,7 @@ const state = {
   reportProductSummary: [],
   reportChannelSummary: [],
   reportTimeSeries: [],
+  latestSalesDateBySku: {},
   stockIndex: {
     allLocations: [], allProducts: [], availableProducts: [], allSkus: [], availableSkus: [],
     bySku: {}, byProduct: {}, bySkuLocation: {}, byProductLocation: {},
@@ -722,16 +723,16 @@ function initializeCompactTableStyles() {
     }
 
     /* Revoked label replacing the Revoke button. */
-    #salesTable .sales-revo*ed-action {
-      display: inline-flex*
+    #salesTable .sales-revoked-action {
+      display: inline-flex;
       align-items: center;
-      justify-*ontent: center;
+      justify-content: center;
       width: 58px;
-      h*ight: 27px;
+      height: 27px;
       min-width: 58px;
-      p*dding: 0 8px;
-      border-radius: 999*x;
-      background: rgba(180, 54, 54,*0.09);
+      padding: 0 8px;
+      border-radius: 999px;
+      background: rgba(180, 54, 54, 0.09);
       color: #B43636;
     }
 
@@ -932,6 +933,8 @@ function bindEvents() {
   };
   $('loadReportButton').addEventListener('click', loadReport);
   document.querySelectorAll('[data-export]').forEach((button) => button.onclick = () => exportByType(button.dataset.export));
+  $('matrixStockExportButton')
+    ?.addEventListener('click', exportMatrixStock);
   ['salesSearch', 'stockSearch', 'transferSearch', 'movementSearch'].forEach((id) => $(id).addEventListener('input', renderMainTables));
   document.addEventListener('click', handleTableActions);
 
@@ -1058,6 +1061,8 @@ async function refreshAll() {
     state.transfers = results[2].data || [];
     state.movements = results[3].data || [];
 
+    // Build reusable indexes once per refresh instead of repeatedly scanning Sales.
+    buildLatestSalesDateIndex(state.sales);
     buildStockIndex(state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'));
     renderMainTables();
     showMessage('Data refreshed.', 'ok');
@@ -1606,22 +1611,31 @@ function renderMainTables() {
     `${state.sales.length.toLocaleString()} loaded transactions.`;
 }
 
+function buildLatestSalesDateIndex(salesRows) {
+  // Cache the latest active sale date per SKU in one pass.
+  // This avoids scanning and sorting the complete Sales dataset for every Stock row.
+  const latestBySku = {};
+
+  salesRows.forEach((sale) => {
+    if ((sale.status || 'ACTIVE') !== 'ACTIVE') return;
+
+    const sku = cleanText(sale.sku).toUpperCase();
+    const saleDate = cleanText(sale.sale_date);
+
+    if (!sku || !saleDate) return;
+
+    if (!latestBySku[sku] || saleDate > latestBySku[sku]) {
+      latestBySku[sku] = saleDate;
+    }
+  });
+
+  state.latestSalesDateBySku = latestBySku;
+}
+
 function latestSalesDateBySku(sku) {
+  // Return the cached latest active Sales date for the requested SKU.
   const stockSku = cleanText(sku).toUpperCase();
-
-  if (!stockSku) return '-';
-
-  const latestDate = state.sales
-    .filter((sale) =>
-      (sale.status || 'ACTIVE') === 'ACTIVE' &&
-      cleanText(sale.sku).toUpperCase() === stockSku &&
-      cleanText(sale.sale_date)
-    )
-    .map((sale) => cleanText(sale.sale_date))
-    .sort()
-    .at(-1);
-
-  return latestDate || '-';
+  return stockSku ? state.latestSalesDateBySku[stockSku] || '-' : '-';
 }
 
 function renderReportInputs() {
@@ -2856,6 +2870,185 @@ function exportByType(type) {
   const workbook = XLSX.utils.book_new();
   addSheet(workbook, rows, 'Data', tableColumns);
   XLSX.writeFile(workbook, fileName);
+}
+
+async function exportMatrixStock() {
+  // Ensure Supabase is connected.
+  if (!ensureClient()) return;
+
+  const button = $('matrixStockExportButton');
+
+  try {
+    // Prevent duplicate clicks when the button exists in the current layout.
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Preparing...';
+    }
+
+    // Refresh the Supabase matrix before downloading.
+    const { data: refreshResult, error: refreshError } =
+      await state.client.rpc('refresh_matrix_stock');
+
+    if (refreshError) throw refreshError;
+
+    // Retrieve the refreshed Matrix Stock rows.
+    const { data, error } = await state.client
+      .from('matrix_stock')
+      .select('*')
+      .order('product_name')
+      .order('month_start');
+
+    if (error) throw error;
+    if (!data?.length) throw new Error('Matrix Stock is empty.');
+
+    // Convert normalized rows into the monthly Excel matrix.
+    const matrixRows = buildWideStockMatrix(data);
+
+    const worksheet =
+      XLSX.utils.aoa_to_sheet(matrixRows.rows);
+
+    worksheet['!merges'] = matrixRows.merges;
+    worksheet['!cols'] = matrixRows.columnWidths;
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      'Matrix Stock'
+    );
+
+    XLSX.writeFile(
+      workbook,
+      `matrix_stock_${new Date().toISOString().slice(0, 10)}.xlsx`
+    );
+
+    const status =
+      refreshResult?.[0]?.refresh_status || 'SUCCESS';
+
+    showMessage(
+      `Matrix Stock exported. Refresh status: ${status}.`,
+      'ok'
+    );
+  } catch (error) {
+    showMessage(
+      error.message || 'Failed to export Matrix Stock.',
+      'err'
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = 'Matrix Stock';
+    }
+  }
+}
+
+function buildWideStockMatrix(sourceRows) {
+  // Collect unique months once and keep chronological order.
+  const months = [...new Set(
+    sourceRows.map((row) => cleanText(row.month_start))
+  )].sort();
+
+  // Group normalized Supabase rows by Product Name and month.
+  const products = new Map();
+
+  sourceRows.forEach((sourceRow) => {
+    const productName = cleanText(sourceRow.product_name) || '-';
+    const month = cleanText(sourceRow.month_start);
+
+    if (!products.has(productName)) {
+      products.set(productName, new Map());
+    }
+
+    products.get(productName).set(month, sourceRow);
+  });
+
+  // Build the two-row Excel header.
+  const monthHeader = ['Product Name'];
+  const metricHeader = [''];
+  const merges = [
+    { s: { r: 0, c: 0 }, e: { r: 1, c: 0 } }
+  ];
+
+  months.forEach((month, index) => {
+    const startColumn = 1 + index * 4;
+
+    monthHeader.push(
+      formatStockMatrixMonth(month),
+      '',
+      '',
+      ''
+    );
+
+    metricHeader.push(
+      'Beginning',
+      'Addition',
+      'Sales',
+      'Sales w/o Free Sample'
+    );
+
+    merges.push({
+      s: { r: 0, c: startColumn },
+      e: { r: 0, c: startColumn + 3 }
+    });
+  });
+
+  const rows = [monthHeader, metricHeader];
+
+  // Add one output row per Product Name.
+  [...products.entries()]
+    .sort(([productA], [productB]) =>
+      productA.localeCompare(productB, 'id-ID', {
+        numeric: true,
+        sensitivity: 'base'
+      })
+    )
+    .forEach(([productName, monthData]) => {
+      const outputRow = [productName];
+
+      months.forEach((month) => {
+        const value = monthData.get(month) || {};
+
+        outputRow.push(
+          numberValue(value.beginning_qty),
+          numberValue(value.addition_qty),
+          numberValue(value.sales_qty),
+          numberValue(value.sales_without_free_sample_qty)
+        );
+      });
+
+      rows.push(outputRow);
+    });
+
+  // Keep Product Name readable and monthly metrics compact.
+  const columnWidths = [{ wch: 38 }];
+
+  months.forEach(() => {
+    columnWidths.push(
+      { wch: 13 },
+      { wch: 13 },
+      { wch: 13 },
+      { wch: 23 }
+    );
+  });
+
+  return {
+    rows,
+    merges,
+    columnWidths
+  };
+}
+
+function formatStockMatrixMonth(value) {
+  // Format YYYY-MM-DD into Month YYYY.
+  const date = new Date(`${value}T00:00:00`);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
 }
 
 function addSheet(workbook, rows, sheetName, tableColumns) {
