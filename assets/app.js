@@ -121,16 +121,17 @@ function init() {
 }
 
 function initializeCompactTableStyles() {
-  // Prevent the same style from being injected twice.
+  // Prevent the same CSS from being added more than once.
   if ($('compactTableUiStyles')) return;
 
+  // Create one style element for the compact Sales and Stock UI.
   const style = document.createElement('style');
   style.id = 'compactTableUiStyles';
 
   style.textContent = `
     /* =====================================================
-       Compact Sales and Stock tables
-       Visual-only styling
+       TABLE WRAPPERS
+       Remove horizontal scrolling and fit tables to container.
        ===================================================== */
 
     #salesTable,
@@ -148,12 +149,9 @@ function initializeCompactTableStyles() {
     }
 
     /* =====================================================
-   Compact Sales and Stock typography
-
-   Smaller padding produces narrower spacing.
-   Larger body font improves readability.
-   Every header and value is centered.
-   ===================================================== */
+       GENERAL TABLE TYPOGRAPHY
+       Smaller spacing with larger, more readable text.
+       ===================================================== */
 
     #salesTable th,
     #salesTable td,
@@ -162,8 +160,8 @@ function initializeCompactTableStyles() {
       padding: 8px 5px;
       font-size: 11.5px;
       line-height: 1.25;
-      vertical-align: middle;
       text-align: center;
+      vertical-align: middle;
       white-space: normal;
       overflow-wrap: break-word;
     }
@@ -182,39 +180,44 @@ function initializeCompactTableStyles() {
     }
 
     /* =====================================================
-      Sales table widths
+       SALES TABLE WIDTHS
 
-      Status | Action | Date | Order No. |
-      Channel | SKU / Product | Qty | Net Sales
-      ===================================================== */
+       Visible columns:
+       Status | Action | Date | Order No. |
+       Channel | SKU / Product | Qty | Net Sales
+
+       Total width = 100%
+       ===================================================== */
 
     #salesTable th:nth-child(1),
-    #s*lesTable td:nth-child(1) {
-      width* 8%;
+    #salesTable td:nth-child(1) {
+      width: 8%;
       text-align: center;
-      white*space: nowrap;
-      word-break: norma*;
+      white-space: nowrap;
+      word-break: normal;
     }
 
     #salesTable th:nth-child(2),
-    *salesTable td:nth-child(2) {
-      wid*h: 18%;
+    #salesTable td:nth-child(2) {
+      width: 18%;
       text-align: center;
-      ov*rflow: visible;
+      overflow: visible;
     }
 
-    #salesTable th:*th-child(3),
-    #salesTable td:nth-ch*ld(3) {
+    #salesTable th:nth-child(3),
+    #salesTable td:nth-child(3) {
       width: 10%;
-      text-align* center;
+      text-align: center;
       white-space: nowrap;
     }
-    *#salesTable th:nth-child(4),
-    #sale*Table td:nth-child(4) {
-      width: 1*%;
+
+    #salesTable th:nth-child(4),
+    #salesTable td:nth-child(4) {
+      width: 17%;
       text-align: center;
-      white-s*ace: nowrap;
-      word-break: normal;*  overflow: hidden;
+      white-space: nowrap;
+      word-break: normal;
+      overflow: hidden;
       text-overflow: ellipsis;
     }
 
@@ -246,6 +249,7 @@ function initializeCompactTableStyles() {
     }
 
     /* Keep ACTIVE and REVOKED on one line. */
+
     #salesTable .status-active,
     #salesTable .status-revoked {
       display: inline-flex;
@@ -256,7 +260,9 @@ function initializeCompactTableStyles() {
       line-height: 1;
     }
 
-    /* Keep Order No. on one centered line. */
+    /* Keep Order No. on one centered line.
+       The complete value remains available through title hover. */
+
     .sales-order-number {
       display: block;
       width: 100%;
@@ -267,13 +273,14 @@ function initializeCompactTableStyles() {
       text-align: center;
     }
 
-    /* Center the combined SKU and Product Name. */
-    #salesTable .compact-prod*ct-cell {
+    /* Center the combined Sales SKU and Product Name. */
+
+    #salesTable .compact-product-cell {
       width: 100%;
-      text-al*gn: center;
+      text-align: center;
     }
 
-    #salesTable .compac*-product-sku {
+    #salesTable .compact-product-sku {
       margin-bottom: 3px;
       text-align: center;
       font-size: 10.5px;
@@ -296,42 +303,47 @@ function initializeCompactTableStyles() {
     }
 
     /* =====================================================
-      Stock table widths
+       STOCK TABLE WIDTHS
 
-      Action | Location | SKU | Product Name | Qty |
-      Price | Consign Price | COGS | Last Sold
-      ===================================================== */
+       Visible columns:
+       Action | Location | SKU | Product Name | Qty |
+       Price | Consign Price | COGS | Last Sold
+
+       Total width = 100%
+       ===================================================== */
 
     #stockTable th:nth-child(1),
-    #s*ockTable td:nth-child(1) {
-      width* 12%;
+    #stockTable td:nth-child(1) {
+      width: 12%;
       text-align: center;
-      over*low: visible;
+      overflow: visible;
     }
 
-    #stockTable th:nt*-child(2),
-    #stockTable td:nth-chil*(2) {
+    #stockTable th:nth-child(2),
+    #stockTable td:nth-child(2) {
       width: 16%;
-      text-align: *enter;
-    }
-
-    #stockTable th:nth-child*3),
-    #stockTable td:nth-child(3) {
-    * width: 7%;
       text-align: center;
-    * white-space: nowrap;
+      vertical-align: middle;
     }
 
-    #stockTab*e th:nth-child(4),
-    #stockTable td:*th-child(4) {
+    #stockTable th:nth-child(3),
+    #stockTable td:nth-child(3) {
+      width: 7%;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    #stockTable th:nth-child(4),
+    #stockTable td:nth-child(4) {
       width: 21%;
-      text*align: center;
+      text-align: center;
+      vertical-align: middle;
     }
 
-    #stockTable th:n*h-child(5),
-    #stockTable td:nth-chi*d(5) {
+    #stockTable th:nth-child(5),
+    #stockTable td:nth-child(5) {
       width: 6%;
-      text-align: *enter;
+      text-align: center;
       white-space: nowrap;
     }
 
@@ -363,59 +375,10 @@ function initializeCompactTableStyles() {
       white-space: nowrap;
     }
 
-    /* Keep all Action controls in one row. */
-    .sales-action-group {
-      displa*: flex;
-      align-items: center;
-      justify-content: center;
-      flex-wrap: nowrap;
-      gap: 4px;
-      width: 100%;
-      overflow: visible;
-    }
-
-    /* Consistent icon size. */
-    #salesTable .icon-btn,
-    #stockTable .icon-btn,
-    #salesTable .sales-info-button,
-    #stockTable .sales-info-button {
-      width: 27px;
-      height: 27px;
-      min-width: 27px;
-      flex: 0 0 27px;
-    }
-
-    /* Compact Revoke button. */
-    #salesTable .revoke-btn {
-      padding: 6px 8px;
-      font-size: 10px;
-      line-height: 1;
-      white-space: nowrap;
-    }
-
-    /* Combined SKU and Product Name. */
-
-    .compact-product-sku {
-      margin-bottom: 3px;
-      font-size: 9.5px;
-      line-height: 1;
-      font-weight: 900;
-      color: #50603A;
-      letter-spacing: 0.03em;
-    }
-
-    .compact-product-name {
-      display: -webkit-box;
-      overflow: hidden;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 2;
-      font-size: 10.5px;
-      line-height: 1.25;
-      font-weight: 700;
-      color: #1F2933;
-    }
-
-    /* Existing Action column controls. */
+    /* =====================================================
+       ACTION CONTROLS
+       Keep buttons on one centered horizontal line.
+       ===================================================== */
 
     .sales-action-group {
       display: flex;
@@ -427,7 +390,41 @@ function initializeCompactTableStyles() {
       overflow: visible;
     }
 
-    /* Circular information icon. */
+    #salesTable .draft-actions,
+    #stockTable .draft-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: nowrap;
+      gap: 4px;
+      width: 100%;
+    }
+
+    /* Consistent icon size. */
+
+    #salesTable .icon-btn,
+    #stockTable .icon-btn,
+    #salesTable .sales-info-button,
+    #stockTable .sales-info-button {
+      width: 27px;
+      height: 27px;
+      min-width: 27px;
+      flex: 0 0 27px;
+    }
+
+    /* Keep Revoke compact and on one line. */
+
+    #salesTable .revoke-btn {
+      padding: 6px 8px;
+      font-size: 10px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    /* =====================================================
+       INFORMATION ICON
+       Shared by Sales and Stock.
+       ===================================================== */
 
     .sales-info-wrapper {
       position: relative;
@@ -443,6 +440,7 @@ function initializeCompactTableStyles() {
       justify-content: center;
       width: 27px;
       height: 27px;
+      min-width: 27px;
       flex: 0 0 27px;
       padding: 0;
       border: 1.7px solid #50603A;
@@ -453,6 +451,7 @@ function initializeCompactTableStyles() {
       transition:
         color 150ms ease,
         background 150ms ease,
+        border-color 150ms ease,
         box-shadow 150ms ease,
         transform 150ms ease;
     }
@@ -463,10 +462,12 @@ function initializeCompactTableStyles() {
       font-size: 15px;
       line-height: 1;
       font-weight: 900;
+      transform: translateY(-0.3px);
     }
 
     .sales-info-button:hover,
     .sales-info-button:focus-visible {
+      border-color: #50603A;
       background: #50603A;
       color: #FFFFFF;
       box-shadow: 0 7px 18px rgba(80, 96, 58, 0.24);
@@ -474,7 +475,10 @@ function initializeCompactTableStyles() {
       outline: none;
     }
 
-    /* Floating Sales details panel. */
+    /* =====================================================
+       FLOATING INFORMATION PANEL
+       Shared by Sales and Stock.
+       ===================================================== */
 
     .sales-info-tooltip {
       position: fixed;
@@ -526,6 +530,8 @@ function initializeCompactTableStyles() {
 
     .sales-info-tooltip-status {
       display: inline-flex;
+      align-items: center;
+      justify-content: center;
       padding: 5px 8px;
       border-radius: 999px;
       background: rgba(80, 96, 58, 0.09);
@@ -534,6 +540,7 @@ function initializeCompactTableStyles() {
       line-height: 1;
       font-weight: 900;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
 
     .sales-info-tooltip-grid {
@@ -578,9 +585,11 @@ function initializeCompactTableStyles() {
       display: block;
       margin-bottom: 4px;
       font-size: 9px;
+      line-height: 1.15;
       font-weight: 800;
       color: rgba(80, 96, 58, 0.66);
       text-transform: uppercase;
+      letter-spacing: 0.035em;
     }
 
     .sales-info-tooltip-remark > strong {
@@ -591,6 +600,192 @@ function initializeCompactTableStyles() {
       color: #1F2933;
     }
 
+    /* Stock tooltip can be slightly smaller because it has
+       fewer hidden fields than the Sales tooltip. */
+
+    .stock-info-tooltip {
+      width: min(390px, calc(100vw - 32px));
+    }
+
+    /* =====================================================
+       FINAL STOCK ALIGNMENT
+       Center headers, arrows, values, and actions.
+       ===================================================== */
+
+    #stockTable th,
+    #stockTable td {
+      text-align: center !important;
+      vertical-align: middle !important;
+    }
+
+    /* Center direct child elements inside Stock cells. */
+
+    #stockTable td > * {
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Center Edit, Info, and Remove controls. */
+
+    #stockTable .sales-action-group,
+    #stockTable .draft-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: nowrap;
+      gap: 4px;
+      width: 100%;
+    }
+
+    /* Override inline styles generated by headerCell().
+       This centers both the title and sorting arrow. */
+
+    #stockTable th button[data-sort-stock-column] {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 5px !important;
+      width: 100% !important;
+      padding: 0 !important;
+      border: 0 !important;
+      background: transparent !important;
+      color: inherit !important;
+      font: inherit !important;
+      font-weight: 850 !important;
+      text-align: center !important;
+      white-space: normal !important;
+      cursor: pointer;
+    }
+
+    #stockTable th button[data-sort-stock-column] > span:first-child {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    #stockTable th button[data-sort-stock-column] > span:last-child {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+    }
+
+    /* Keep selected Stock values on one line. */
+
+    #stockTable td:nth-child(3),
+    #stockTable td:nth-child(5),
+    #stockTable td:nth-child(6),
+    #stockTable td:nth-child(7),
+    #stockTable td:nth-child(8),
+    #stockTable td:nth-child(9) {
+      white-space: nowrap;
+      word-break: normal;
+    }
+
+    /* =====================================================
+   SALES STATUS AND ACTION CONSISTENCY
+   Use uniform font size and fixed Action positions.
+   ===================================================== */
+
+    /* ACTIVE and REVOKED in the Status column. */
+    #salesTable .status-active,
+    #salesTable .status-revoked {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+      word-break: normal;
+      letter-spacing: 0;
+    }
+
+    /* Revoke button uses the same typography. */
+    #salesTable .revoke-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 58px;
+      min-height: 27px;
+      padding: 6px 8px;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    /* Revoked label inside the Action column.
+      Same size and dimensions as the Revoke button. */
+    #salesTable .sales-revoked-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 58px;
+      min-height: 27px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      background: rgba(180, 54, 54, 0.09);
+      color: #B43636;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    /* Fixed positions:
+      Slot 1 = Invoice
+      Slot 2 = Information */
+    #salesTable .sales-action-slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 27px;
+      height: 27px;
+      min-width: 27px;
+      flex: 0 0 27px;
+    }
+
+    /* Fixed third slot for Revoke or Revoked. */
+    #salesTable .sales-revoke-slot {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 58px;
+      min-width: 58px;
+      flex: 0 0 58px;
+    }
+
+    /* Invisible Invoice placeholder.
+      Visibility hidden preserves the layout width,
+      unlike display none, which would shift the Info icon. */
+    #salesTable .sales-invoice-placeholder {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 27px;
+      height: 27px;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* Keep all three Sales Action slots aligned. */
+    #salesTable .sales-action-group {
+      display: grid;
+      grid-template-columns: 27px 27px 58px;
+      align-items: center;
+      justify-content: center;
+      column-gap: 4px;
+      width: 100%;
+      overflow: visible;
+    }
+
+    /* =====================================================
+       RESPONSIVE TOOLTIP
+       ===================================================== */
+
     @media (max-width: 700px) {
       .sales-info-tooltip-grid {
         grid-template-columns: 1fr;
@@ -598,6 +793,7 @@ function initializeCompactTableStyles() {
     }
   `;
 
+  // Add the completed UI styles to the page.
   document.head.appendChild(style);
 }
 
@@ -2893,29 +3089,23 @@ function cell(value, column) {
       `;
     }
 
-    // Revoked Sales rows retain the Info control,
-    // but Invoice and Revoke are unavailable.
-    if ((row.status || 'ACTIVE') === 'REVOKED') {
-      return `
-        <div class="sales-action-group">
-          ${salesInfoControl(row)}
+    const isRevoked =
+      (row.status || 'ACTIVE') === 'REVOKED';
 
-          <span class="revoke-disabled">
-            Revoked
-          </span>
-        </div>
-      `;
-    }
-
-    // Invoice is available for WA Order and Konsinyasi.
     const invoiceChannels = [
       'WA Order',
       'Konsinyasi'
     ];
 
-    const invoiceButton =
-      invoiceChannels.includes(cleanText(row.channel))
-        ? `
+    const canDownloadInvoice =
+      !isRevoked &&
+      invoiceChannels.includes(
+        cleanText(row.channel)
+      );
+
+    const invoiceControl = canDownloadInvoice
+      ? `
+        <span class="sales-action-slot">
           <button
             class="icon-btn edit-line-btn"
             type="button"
@@ -2925,26 +3115,51 @@ function cell(value, column) {
           >
             🧾
           </button>
-        `
-        : '';
+        </span>
+      `
+      : `
+        <span
+          class="sales-action-slot"
+          aria-hidden="true"
+        >
+          <span class="sales-invoice-placeholder">
+            🧾
+          </span>
+        </span>
+      `;
 
-    // Existing Sales revoke control.
-    const revokeButton = `
-      <button
-        class="revoke-btn"
-        type="button"
-        data-revoke-sales-id="${escapeHtml(row.id)}"
-      >
-        Revoke
-      </button>
+    // The Information icon always occupies the second slot.
+    const infoControl = `
+      <span class="sales-action-slot">
+        ${salesInfoControl(row)}
+      </span>
     `;
 
-    // All Sales controls use the existing Action column.
+    // The third slot contains either Revoke or Revoked.
+    const revokeControl = isRevoked
+      ? `
+        <span class="sales-revoked-action">
+          Revoked
+        </span>
+      `
+      : `
+        <button
+          class="revoke-btn"
+          type="button"
+          data-revoke-sales-id="${escapeHtml(row.id)}"
+        >
+          Revoke
+        </button>
+      `;
+
     return `
       <div class="sales-action-group">
-        ${invoiceButton}
-        ${salesInfoControl(row)}
-        ${revokeButton}
+        ${invoiceControl}
+        ${infoControl}
+
+        <span class="sales-revoke-slot">
+          ${revokeControl}
+        </span>
       </div>
     `;
   }
