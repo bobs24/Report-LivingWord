@@ -72,14 +72,13 @@ const uiColumns = {
     'action',
     'sale_date',
     'order_number',
-    'customer_name',
     'channel',
     'sales_product',
     'qty',
     'total_price'
   ],
 
-  // Stock table visible columns.
+  // Compact Stock table shown on screen.
   stock: [
     'action',
     'location',
@@ -148,131 +147,250 @@ function initializeCompactTableStyles() {
       table-layout: fixed;
     }
 
+    /* =====================================================
+   Compact Sales and Stock typography
+
+   Smaller padding produces narrower spacing.
+   Larger body font improves readability.
+   Every header and value is centered.
+   ===================================================== */
+
     #salesTable th,
     #salesTable td,
     #stockTable th,
     #stockTable td {
-      padding: 9px 7px;
-      font-size: 10.5px;
-      line-height: 1.3;
+      padding: 8px 5px;
+      font-size: 11.5px;
+      line-height: 1.25;
       vertical-align: middle;
+      text-align: center;
       white-space: normal;
-      overflow-wrap: anywhere;
+      overflow-wrap: break-word;
     }
 
     #salesTable th,
     #stockTable th {
-      font-size: 8.5px;
-      line-height: 1.15;
+      padding: 9px 4px;
+      font-size: 9.5px;
+      line-height: 1.1;
       font-weight: 850;
       text-align: center;
+      vertical-align: middle;
       text-transform: uppercase;
-      letter-spacing: 0.02em;
+      letter-spacing: 0.015em;
       color: #50603A;
     }
 
     /* =====================================================
-       Sales table widths
-       ===================================================== */
+      Sales table widths
+
+      Status | Action | Date | Order No. |
+      Channel | SKU / Product | Qty | Net Sales
+      ===================================================== */
 
     #salesTable th:nth-child(1),
-    #salesTable td:nth-child(1) {
-      width: 7%;
+    #s*lesTable td:nth-child(1) {
+      width* 8%;
       text-align: center;
+      white*space: nowrap;
+      word-break: norma*;
     }
 
     #salesTable th:nth-child(2),
-    #salesTable td:nth-child(2) {
-      width: 13%;
+    *salesTable td:nth-child(2) {
+      wid*h: 18%;
       text-align: center;
-      overflow: visible;
+      ov*rflow: visible;
     }
 
-    #salesTable th:nth-child(3),
-    #salesTable td:nth-child(3) {
-      width: 9%;
-      text-align: center;
-    }
-
-    #salesTable th:nth-child(4),
-    #salesTable td:nth-child(4) {
+    #salesTable th:*th-child(3),
+    #salesTable td:nth-ch*ld(3) {
       width: 10%;
+      text-align* center;
+      white-space: nowrap;
+    }
+    *#salesTable th:nth-child(4),
+    #sale*Table td:nth-child(4) {
+      width: 1*%;
+      text-align: center;
+      white-s*ace: nowrap;
+      word-break: normal;*  overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #salesTable th:nth-child(5),
     #salesTable td:nth-child(5) {
-      width: 12%;
+      width: 9%;
+      text-align: center;
+      white-space: nowrap;
     }
 
     #salesTable th:nth-child(6),
     #salesTable td:nth-child(6) {
-      width: 9%;
+      width: 21%;
       text-align: center;
     }
 
     #salesTable th:nth-child(7),
     #salesTable td:nth-child(7) {
-      width: 20%;
+      width: 6%;
+      text-align: center;
+      white-space: nowrap;
     }
 
     #salesTable th:nth-child(8),
     #salesTable td:nth-child(8) {
-      width: 7%;
+      width: 11%;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    /* Keep ACTIVE and REVOKED on one line. */
+    #salesTable .status-active,
+    #salesTable .status-revoked {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      word-break: normal;
+      line-height: 1;
+    }
+
+    /* Keep Order No. on one centered line. */
+    .sales-order-number {
+      display: block;
+      width: 100%;
+      overflow: hidden;
+      white-space: nowrap;
+      word-break: normal;
+      text-overflow: ellipsis;
       text-align: center;
     }
 
-    #salesTable th:nth-child(9),
-    #salesTable td:nth-child(9) {
-      width: 13%;
-      text-align: right;
+    /* Center the combined SKU and Product Name. */
+    #salesTable .compact-prod*ct-cell {
+      width: 100%;
+      text-al*gn: center;
+    }
+
+    #salesTable .compac*-product-sku {
+      margin-bottom: 3px;
+      text-align: center;
+      font-size: 10.5px;
+      line-height: 1;
+      font-weight: 900;
+      color: #50603A;
+      letter-spacing: 0.03em;
+    }
+
+    #salesTable .compact-product-name {
+      display: -webkit-box;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      text-align: center;
+      font-size: 11.5px;
+      line-height: 1.25;
+      font-weight: 700;
+      color: #1F2933;
     }
 
     /* =====================================================
-       Stock table widths
-       ===================================================== */
+      Stock table widths
+
+      Action | Location | SKU | Product Name | Qty |
+      Price | Consign Price | COGS | Last Sold
+      ===================================================== */
 
     #stockTable th:nth-child(1),
-    #stockTable td:nth-child(1) {
-      width: 10%;
+    #s*ockTable td:nth-child(1) {
+      width* 12%;
       text-align: center;
+      over*low: visible;
     }
 
-    #stockTable th:nth-child(2),
-    #stockTable td:nth-child(2) {
-      width: 15%;
+    #stockTable th:nt*-child(2),
+    #stockTable td:nth-chil*(2) {
+      width: 16%;
+      text-align: *enter;
     }
 
-    #stockTable th:nth-child(3),
+    #stockTable th:nth-child*3),
     #stockTable td:nth-child(3) {
-      width: 8%;
+    * width: 7%;
       text-align: center;
+    * white-space: nowrap;
     }
 
-    #stockTable th:nth-child(4),
-    #stockTable td:nth-child(4) {
-      width: 22%;
+    #stockTab*e th:nth-child(4),
+    #stockTable td:*th-child(4) {
+      width: 21%;
+      text*align: center;
     }
 
-    #stockTable th:nth-child(5),
-    #stockTable td:nth-child(5) {
-      width: 7%;
-      text-align: center;
+    #stockTable th:n*h-child(5),
+    #stockTable td:nth-chi*d(5) {
+      width: 6%;
+      text-align: *enter;
+      white-space: nowrap;
     }
 
     #stockTable th:nth-child(6),
-    #stockTable td:nth-child(6),
+    #stockTable td:nth-child(6) {
+      width: 10%;
+      text-align: center;
+      white-space: nowrap;
+    }
+
     #stockTable th:nth-child(7),
-    #stockTable td:nth-child(7),
+    #stockTable td:nth-child(7) {
+      width: 10%;
+      text-align: center;
+      white-space: nowrap;
+    }
+
     #stockTable th:nth-child(8),
     #stockTable td:nth-child(8) {
-      width: 11%;
-      text-align: right;
+      width: 9%;
+      text-align: center;
+      white-space: nowrap;
     }
 
     #stockTable th:nth-child(9),
     #stockTable td:nth-child(9) {
-      width: 10%;
+      width: 9%;
       text-align: center;
+      white-space: nowrap;
+    }
+
+    /* Keep all Action controls in one row. */
+    .sales-action-group {
+      displa*: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: nowrap;
+      gap: 4px;
+      width: 100%;
+      overflow: visible;
+    }
+
+    /* Consistent icon size. */
+    #salesTable .icon-btn,
+    #stockTable .icon-btn,
+    #salesTable .sales-info-button,
+    #stockTable .sales-info-button {
+      width: 27px;
+      height: 27px;
+      min-width: 27px;
+      flex: 0 0 27px;
+    }
+
+    /* Compact Revoke button. */
+    #salesTable .revoke-btn {
+      padding: 6px 8px;
+      font-size: 10px;
+      line-height: 1;
+      white-space: nowrap;
     }
 
     /* Combined SKU and Product Name. */
@@ -303,8 +421,9 @@ function initializeCompactTableStyles() {
       display: flex;
       align-items: center;
       justify-content: center;
-      flex-wrap: wrap;
-      gap: 5px;
+      flex-wrap: nowrap;
+      gap: 4px;
+      width: 100%;
       overflow: visible;
     }
 
@@ -2648,11 +2767,20 @@ function cell(value, column) {
     `;
   }
 
-  // =======================================================
-  // Stock status display
-  // Kept for other table/export usages, although it is no
-  // longer included in the compact Stock UI columns.
-  // =======================================================
+  if (column === 'order_number') {
+    const orderNumber = cleanText(value) || '-';
+
+    return `
+      <span
+        class="sales-order-number"
+        title="${escapeHtml(orderNumber)}"
+      >
+        ${escapeHtml(orderNumber)}
+      </span>
+    `;
+  }
+
+
 
   if (column === 'stock_status') {
     const className =
@@ -2723,21 +2851,25 @@ function cell(value, column) {
     // Stock-row actions.
     if (row.__actionType === 'stock') {
       return `
-        <div class="draft-actions">
+        <div class="sales-action-group">
           <button
             class="icon-btn edit-line-btn"
             type="button"
             data-edit-stock-id="${escapeHtml(row.id)}"
             title="Edit stock"
+            aria-label="Edit stock"
           >
             ✎
           </button>
+
+          ${stockInfoControl(row)}
 
           <button
             class="icon-btn remove-line-btn"
             type="button"
             data-remove-stock-id="${escapeHtml(row.id)}"
             title="Remove stock"
+            aria-label="Remove stock"
           >
             ×
           </button>
@@ -2962,6 +3094,79 @@ function salesInfoControl(row) {
           <strong>
             ${escapeHtml(remark)}
           </strong>
+        </span>
+      </span>
+    </span>
+  `;
+}
+
+function stockInfoControl(row) {
+  // Stock Status is hidden from the compact Stock table,
+  // so it is displayed inside the information panel.
+  const stockStatus =
+    cleanText(row.stock_status) || '-';
+
+  // Updated At is also hidden from the compact Stock table.
+  const updatedAt =
+    row.updated_at
+      ? formatDateTime(row.updated_at)
+      : '-';
+
+  // Keep SKU as the tooltip reference.
+  const sku =
+    cleanText(row.sku) || '-';
+
+  return `
+    <span class="sales-info-wrapper">
+      <button
+        type="button"
+        class="sales-info-button"
+        aria-label="View hidden stock details for ${escapeHtml(sku)}"
+        title="View stock details"
+      >
+        <span aria-hidden="true">i</span>
+      </button>
+
+      <span
+        class="sales-info-tooltip stock-info-tooltip"
+        role="tooltip"
+      >
+        <span class="sales-info-tooltip-header">
+          <span>
+            <span class="sales-info-tooltip-title">
+              Stock Details
+            </span>
+
+            <span class="sales-info-tooltip-subtitle">
+              ${escapeHtml(sku)}
+            </span>
+          </span>
+
+          <span class="sales-info-tooltip-status">
+            ${escapeHtml(stockStatus)}
+          </span>
+        </span>
+
+        <span class="sales-info-tooltip-grid">
+          ${salesInfoItem(
+            'Tier 1 Price',
+            formatCurrency(row.tier1_price)
+          )}
+
+          ${salesInfoItem(
+            'Tier 2 Price',
+            formatCurrency(row.tier2_price)
+          )}
+
+          ${salesInfoItem(
+            'Tier 3 Price',
+            formatCurrency(row.tier3_price)
+          )}
+
+          ${salesInfoItem(
+            'Updated At',
+            updatedAt
+          )}
         </span>
       </span>
     </span>
