@@ -687,52 +687,52 @@ function initializeCompactTableStyles() {
    SALES STATUS AND ACTION CONSISTENCY
    Use uniform font size and fixed Action positions.
    ===================================================== */
+    #salesTable .status-active,
+    #salesTable .status-revoked,
+    #salesTable .revoke-btn,
+    #salesTable .sales-revoked-action {
+      box-sizing: border-box;
+      font-family: inherit;
+      font-size: 10px;
+      line-height: 1;
+      font-weight: 800;
+      letter-spacing: 0;
+      white-space: nowrap;
+      word-break: normal;
+    }
 
-    /* ACTIVE and REVOKED in the Status column. */
+    /* Status values in the Status column. */
     #salesTable .status-active,
     #salesTable .status-revoked {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       padding: 6px 8px;
-      font-size: 10px;
-      line-height: 1;
-      font-weight: 800;
-      white-space: nowrap;
-      word-break: normal;
-      letter-spacing: 0;
     }
 
-    /* Revoke button uses the same typography. */
+    /* Revoke button in the Action column. */
     #salesTable .revoke-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      width: 58px;
+      height: 27px;
       min-width: 58px;
-      min-height: 27px;
-      padding: 6px 8px;
-      font-size: 10px;
-      line-height: 1;
-      font-weight: 800;
-      white-space: nowrap;
+      padding: 0 8px;
     }
 
-    /* Revoked label inside the Action column.
-      Same size and dimensions as the Revoke button. */
-    #salesTable .sales-revoked-action {
-      display: inline-flex;
+    /* Revoked label replacing the Revoke button. */
+    #salesTable .sales-revo*ed-action {
+      display: inline-flex*
       align-items: center;
-      justify-content: center;
+      justify-*ontent: center;
+      width: 58px;
+      h*ight: 27px;
       min-width: 58px;
-      min-height: 27px;
-      padding: 6px 8px;
-      border-radius: 999px;
-      background: rgba(180, 54, 54, 0.09);
+      p*dding: 0 8px;
+      border-radius: 999*x;
+      background: rgba(180, 54, 54,*0.09);
       color: #B43636;
-      font-size: 10px;
-      line-height: 1;
-      font-weight: 800;
-      white-space: nowrap;
     }
 
     /* Fixed positions:
