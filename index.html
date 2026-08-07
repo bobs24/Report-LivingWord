@@ -243,14 +243,31 @@
 
         <article class="card table-card">
           <div class="section-title-row">
-            <div>
-              <h2>Current Stock</h2>
-              <p>Location, SKU, quantity, price, tier price, and COGS.</p>
-            </div>
-            <button class="btn btn-secondary" data-export="stock" type="button">
+          <div>
+            <h2>Current Stock</h2>
+            <p>Location, SKU, quantity, price, consign price, COGS, and last sold date.</p>
+          </div>
+
+          <div class="stock-export-actions">
+            <!-- Existing Current Stock export. -->
+            <button
+              class="btn btn-secondary"
+              data-export="stock"
+              type="button"
+            >
               Current Stock
             </button>
+
+            <!-- New monthly Matrix Stock export. -->
+            <button
+              class="btn btn-secondary"
+              id="matrixStockExportButton"
+              type="button"
+            >
+              Matrix Stock
+            </button>
           </div>
+        </div>
 
           <input class="search-input" id="stockSearch" placeholder="Search stock...">
           <div class="table-wrap" id="stockTable"></div>
@@ -435,6 +452,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <!-- Main app script -->
-  <script src="assets/app.js?v=20260806-Matrix-Added"></script>
+  <script src="assets/app.js?v=20260806-Matrix-Added-v2"></script>
 </body>
 </html>
