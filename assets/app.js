@@ -2984,7 +2984,7 @@ function buildWideStockMatrix(sourceRows) {
       'Beginning',
       'Addition',
       'Sales',
-      'Sales w/o Free Sample'
+      'Free Sample'
     );
 
     merges.push({
@@ -3013,7 +3013,7 @@ function buildWideStockMatrix(sourceRows) {
           numberValue(value.beginning_qty),
           numberValue(value.addition_qty),
           numberValue(value.sales_qty),
-          numberValue(value.sales_without_free_sample_qty)
+          numberValue(value.free_sample_qty)
         );
       });
 
