@@ -383,7 +383,20 @@
 
           <label>
             Product Name
-            <input id="reportProductFilter" data-dd="product-report" autocomplete="off" placeholder="All products">
+
+            <button
+              type="button"
+              class="product-filter-button"
+              id="reportProductFilterButton"
+            >
+              All Products
+            </button>
+
+            <div
+              class="product-filter-panel"
+              id="reportProductFilterPanel"
+              hidden
+            ></div>
           </label>
 
           <label>
@@ -423,7 +436,31 @@
         <article class="card span-report">
           <div class="chart-header">
             <div>
-              <h2>Sales Trend</h2>
+              <div class="sales-trend-title">
+                <h2>Sales Trend</h2>
+
+                <div
+                  class="trend-mode-switch"
+                  role="group"
+                  aria-label="Sales trend grouping"
+                >
+                  <button
+                    type="button"
+                    class="trend-mode-button date-mode active"
+                    data-trend-mode="date"
+                  >
+                    By Date
+                  </button>
+
+                  <button
+                    type="button"
+                    class="trend-mode-button product-mode"
+                    data-trend-mode="product"
+                  >
+                    By Product
+                  </button>
+                </div>
+              </div>
               <p class="chart-note">Bars = amount, line = quantity.</p>
             </div>
 
@@ -452,6 +489,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <!-- Main app script -->
-  <script src="assets/app.js?v=20260819-Invoice-Dynamic-v2"></script>
+  <script src="assets/app.js?v=20260819-Sales-Trend"></script>
 </body>
 </html>

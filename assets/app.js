@@ -48,6 +48,17 @@ const state = {
   reportProductSummary: [],
   reportChannelSummary: [],
   reportTimeSeries: [],
+
+  // Current chart display mode.
+  // Default chart remains grouped by Date.
+  reportChartMode: 'date',
+
+  // Empty array means All Products.
+  reportSelectedProducts: [],
+
+  // Aggregated Product chart data.
+  reportProductTimeSeries: [],
+
   latestSalesDateBySku: {},
   stockIndex: {
     allLocations: [], allProducts: [], availableProducts: [], allSkus: [], availableSkus: [],
@@ -917,63 +928,356 @@ function hideAllSalesInfoTooltips() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('.tab-button').forEach((button) => button.onclick = () => showTab(button.dataset.tab, button));
-  $('loginButton').onclick = signInWithGoogle;
-  $('logoutButton').onclick = signOut;
-  $('refreshButton').onclick = refreshAll;
-  $('addLineButton').onclick = addDraftLine;
-  $('submitOrderButton').onclick = submitSalesOrder;
-  $('stockForm').onsubmit = submitStock;
-  $('transferForm').onsubmit = submitTransfer;
+  // =======================================================
+  // Sales Trend mode: By Date or By Product
+  // =======================================================
+
+  document
+    .querySelectorAll('[data-trend-mode]')
+    .forEach((button) => {
+      button.addEventListener('click', () => {
+        // Save the selected chart mode.
+        state.reportChartMode =
+          button.dataset.trendMode || 'date';
+
+        // Update the visual active state.
+        document
+          .querySelectorAll('[data-trend-mode]')
+          .forEach((item) => {
+            item.classList.toggle(
+              'active',
+              item === button
+            );
+          });
+
+        // Re-render using already loaded report data.
+        renderActiveSalesTrend();
+      });
+    });
+
+  // =======================================================
+  // Product multi-select checklist
+  // =======================================================
+
+  $('reportProductFilterButton')
+    ?.addEventListener('click', () => {
+      const panel =
+        $('reportProductFilterPanel');
+
+      if (!panel) return;
+
+      // Refresh the checklist before opening.
+      renderReportProductChecklist();
+
+      // Open or close the checklist.
+      panel.hidden = !panel.hidden;
+    });
+
+  $('reportProductFilterPanel')
+    ?.addEventListener('change', (event) => {
+      const input = event.target;
+
+      // Ignore changes that do not come from checkboxes.
+      if (!(input instanceof HTMLInputElement)) {
+        return;
+      }
+
+      // All Products means no Product Name filter.
+      if (input.matches('[data-report-product-all]')) {
+        state.reportSelectedProducts = [];
+
+        renderReportProductChecklist();
+        updateReportProductFilterLabel();
+
+        // Reload an existing report using all products.
+        if (state.reportRows.length) {
+          loadReport();
+        }
+
+        return;
+      }
+
+      // Handle individual Product selection.
+      if (input.matches('[data-report-product]')) {
+        const product =
+          cleanText(input.dataset.reportProduct);
+
+        if (!product) return;
+
+        if (input.checked) {
+          // Add the Product without creating duplicates.
+          state.reportSelectedProducts = [
+            ...new Set([
+              ...state.reportSelectedProducts,
+              product
+            ])
+          ];
+        } else {
+          // Remove the unchecked Product.
+          state.reportSelectedProducts =
+            state.reportSelectedProducts.filter(
+              (item) => item !== product
+            );
+        }
+      }
+
+      // An empty individual selection automatically means
+      // All Products.
+      renderReportProductChecklist();
+      updateReportProductFilterLabel();
+      if (state.reportRows.length) {
+        loadReport();
+        }
+    });
+
+  // Close the Product checklist when clicking outside it.
+  document.addEventListener('pointerdown', (event) => {
+    const panel =
+      $('reportProductFilterPanel');
+
+    const button =
+      $('reportProductFilterButton');
+
+    if (
+      !panel ||
+      panel.hidden ||
+      panel.contains(event.target) ||
+      button?.contains(event.target)
+    ) {
+      return;
+    }
+
+    panel.hidden = true;
+  });
+
+  // =======================================================
+  // Main navigation
+  // =======================================================
+
+  document
+    .querySelectorAll('.tab-button')
+    .forEach((button) => {
+      button.onclick = () =>
+        showTab(
+          button.dataset.tab,
+          button
+        );
+    });
+
+  // =======================================================
+  // Authentication and refresh
+  // =======================================================
+
+  $('loginButton').onclick =
+    signInWithGoogle;
+
+  $('logoutButton').onclick =
+    signOut;
+
+  $('refreshButton').onclick =
+    refreshAll;
+
+  // =======================================================
+  // Sales form
+  // =======================================================
+
+  $('addLineButton').onclick =
+    addDraftLine;
+
+  $('submitOrderButton').onclick =
+    submitSalesOrder;
+
+  // =======================================================
+  // Stock and Transfer forms
+  // =======================================================
+
+  $('stockForm').onsubmit =
+    submitStock;
+
+  $('transferForm').onsubmit =
+    submitTransfer;
+
+  // =======================================================
+  // Report controls
+  // =======================================================
+
   $('reportType').onchange = () => {
     renderReportInputs();
+
     if (state.reportRows.length) {
       buildReport(state.reportRows);
     }
   };
-  $('loadReportButton').addEventListener('click', loadReport);
-  document.querySelectorAll('[data-export]').forEach((button) => button.onclick = () => exportByType(button.dataset.export));
+
+  $('loadReportButton')
+    .addEventListener(
+      'click',
+      loadReport
+    );
+
+  // =======================================================
+  // Excel exports
+  // =======================================================
+
+  document
+    .querySelectorAll('[data-export]')
+    .forEach((button) => {
+      button.onclick = () =>
+        exportByType(
+          button.dataset.export
+        );
+    });
+
   $('matrixStockExportButton')
-    ?.addEventListener('click', exportMatrixStock);
-  ['salesSearch', 'stockSearch', 'transferSearch', 'movementSearch'].forEach((id) => $(id).addEventListener('input', renderMainTables));
-  document.addEventListener('click', handleTableActions);
+    ?.addEventListener(
+      'click',
+      exportMatrixStock
+    );
 
-  const categoryInput = document.querySelector('[name="category"]');
-  if (categoryInput) {
-    categoryInput.addEventListener('change', (event) => {
-      const channelInput = document.querySelector('[name="channel"]');
-      const orderInput = document.querySelector('[name="order_number"]');
-      if (['Tier 1', 'Tier 2', 'Tier 3'].includes(event.target.value) && channelInput) channelInput.value = 'WA Order';
-      if (event.target.value === 'Free Sample' && orderInput) orderInput.value = '';
-      syncSkuProduct(event.target);
-    });
-  }
+  // =======================================================
+  // Table search boxes
+  // =======================================================
 
-  const channelInput = document.querySelector('[name="channel"]');
-  if (channelInput) {
-    channelInput.addEventListener('change', (event) => {
-      const form = event.target.closest('form');
-      const locationInput = form?.querySelector('[name="location"]');
+  [
+    'salesSearch',
+    'stockSearch',
+    'transferSearch',
+    'movementSearch'
+  ].forEach((id) => {
+    const input = $(id);
 
-      if (locationInput && event.target.value === 'Konsinyasi') {
-        const location = cleanText(locationInput.value);
-
-        if (location && !location.startsWith('Konsinyasi - ')) {
-          locationInput.value = '';
-        }
-      }
-
-      syncSkuProduct(event.target);
-    });
-  }
-
-  document.querySelectorAll('[name="sku"], [name="order_number"]').forEach((input) => {
-    input.addEventListener('input', () => {
-      const position = input.selectionStart;
-      input.value = input.value.toUpperCase();
-      input.setSelectionRange(position, position);
-    });
+    if (input) {
+      input.addEventListener(
+        'input',
+        renderMainTables
+      );
+    }
   });
+
+  // =======================================================
+  // Delegated table actions
+  // =======================================================
+
+  document.addEventListener(
+    'click',
+    handleTableActions
+  );
+
+  // =======================================================
+  // Sales Category behavior
+  // =======================================================
+
+  const categoryInput =
+    document.querySelector(
+      '[name="category"]'
+    );
+
+  if (categoryInput) {
+    categoryInput.addEventListener(
+      'change',
+      (event) => {
+        const channelInput =
+          document.querySelector(
+            '[name="channel"]'
+          );
+
+        const orderInput =
+          document.querySelector(
+            '[name="order_number"]'
+          );
+
+        // Tier categories always use WA Order.
+        if (
+          ['Tier 1', 'Tier 2', 'Tier 3'].includes(
+            event.target.value
+          ) &&
+          channelInput
+        ) {
+          channelInput.value =
+            'WA Order';
+        }
+
+        // Free Sample does not require Order Number.
+        if (
+          event.target.value === 'Free Sample' &&
+          orderInput
+        ) {
+          orderInput.value = '';
+        }
+
+        syncSkuProduct(event.target);
+      }
+    );
+  }
+
+  // =======================================================
+  // Sales Channel behavior
+  // =======================================================
+
+  const channelInput =
+    document.querySelector(
+      '[name="channel"]'
+    );
+
+  if (channelInput) {
+    channelInput.addEventListener(
+      'change',
+      (event) => {
+        const form =
+          event.target.closest('form');
+
+        const locationInput =
+          form?.querySelector(
+            '[name="location"]'
+          );
+
+        // Konsinyasi must use Konsinyasi locations.
+        if (
+          locationInput &&
+          event.target.value === 'Konsinyasi'
+        ) {
+          const location =
+            cleanText(locationInput.value);
+
+          if (
+            location &&
+            !location.startsWith(
+              'Konsinyasi - '
+            )
+          ) {
+            locationInput.value = '';
+          }
+        }
+
+        syncSkuProduct(event.target);
+      }
+    );
+  }
+
+  // =======================================================
+  // Force SKU and Order Number to uppercase
+  // =======================================================
+
+  document
+    .querySelectorAll(
+      '[name="sku"], [name="order_number"]'
+    )
+    .forEach((input) => {
+      input.addEventListener('input', () => {
+        const position =
+          input.selectionStart;
+
+        input.value =
+          input.value.toUpperCase();
+
+        if (position !== null) {
+          input.setSelectionRange(
+            position,
+            position
+          );
+        }
+      });
+    });
 }
 
 function setDefaultDates() {
@@ -1063,7 +1367,19 @@ async function refreshAll() {
 
     // Build reusable indexes once per refresh instead of repeatedly scanning Sales.
     buildLatestSalesDateIndex(state.sales);
-    buildStockIndex(state.stock.filter((row) => (row.status || 'ACTIVE') === 'ACTIVE'));
+
+    buildStockIndex(
+      state.stock.filter((row) =>
+        (row.status || 'ACTIVE') === 'ACTIVE'
+      )
+    );
+
+    // Build the Product checklist after products are loaded.
+    renderReportProductChecklist();
+
+    // Display All Products or selected-product count.
+    updateReportProductFilterLabel();
+
     renderMainTables();
     showMessage('Data refreshed.', 'ok');
   } catch (error) {
@@ -1667,11 +1983,17 @@ async function loadReport(event) {
   if (!range) return;
 
   let query = state.client.from('sales').select('*').eq('status', 'ACTIVE').gte('sale_date', range.startDate).lte('sale_date', range.endDate).order('sale_date', { ascending: true });
-  const product = cleanText($('reportProductFilter')?.value);
+  // Filter by selected Product Names only when
+  // individual products are explicitly selected.
+  if (state.reportSelectedProducts.length) {
+    query = query.in(
+      'product_name',
+      state.reportSelectedProducts
+    );
+  }
   const sku = cleanText($('reportSkuFilter')?.value);
   const location = cleanText($('reportLocationFilter')?.value);
 
-  if (product) query = query.ilike('product_name', `%${product}%`);
   if (sku) query = query.ilike('sku', `%${sku}%`);
   if (location) query = query.ilike('location', `%${location}%`);
 
@@ -1691,6 +2013,7 @@ function buildReport(rows) {
   const categoryMap = new Map();
   const channelMap = new Map();
   const productMap = new Map();
+  const productChartMap = new Map();
   const dateMap = new Map();
 
   let totalQty = 0;
@@ -1739,15 +2062,35 @@ function buildReport(rows) {
     const qty = numberValue(row.qty);
     const amount = numberValue(row.total_price);
     const date = row.sale_date || 'Unknown';
+    const product = row.product_name || 'Unknown';
     const unitCogs = cogsForSale(row);
 
     revenueAmount += amount;
     totalCogs += qty * unitCogs;
 
+    // By Date chart aggregation.
     addSummary(
       dateMap,
       date,
-      { label: date, qty: 0, amount: 0 },
+      {
+        label: date,
+        qty: 0,
+        amount: 0
+      },
+      qty,
+      amount
+    );
+
+    // By Product chart aggregation.
+    // Uses the same non-Free-Sample rows as By Date.
+    addSummary(
+      productChartMap,
+      product,
+      {
+        label: product,
+        qty: 0,
+        amount: 0
+      },
       qty,
       amount
     );
@@ -1772,6 +2115,23 @@ function buildReport(rows) {
   state.reportProductSummary = [...productMap.values()]
     .sort((a, b) => b.amount - a.amount);
 
+  // Product chart uses the same non-Free-Sample source as By Date.
+  // Sort primarily by Qty descending.
+  state.reportProductTimeSeries = [
+    ...productChartMap.values()
+  ].sort((a, b) =>
+    b.qty - a.qty ||
+    b.amount - a.amount ||
+    String(a.label).localeCompare(
+      String(b.label),
+      'id-ID',
+      {
+        numeric: true,
+        sensitivity: 'base'
+      }
+    )
+  );
+  
   state.reportTimeSeries = [...dateMap.values()]
     .sort((a, b) => String(a.label).localeCompare(String(b.label)));
 
@@ -1797,7 +2157,33 @@ function buildReport(rows) {
 
   arrangeReportLayout();
 
-  drawChart('trendChart', state.reportTimeSeries);
+  renderActiveSalesTrend();
+}
+
+function renderActiveSalesTrend() {
+  const isProductMode =
+    state.reportChartMode === 'product';
+
+  const chartData = isProductMode
+    ? state.reportProductTimeSeries
+    : state.reportTimeSeries;
+
+  drawChart(
+    'trendChart',
+    chartData || [],
+    {
+      mode: state.reportChartMode
+    }
+  );
+
+  const note =
+    document.querySelector('.chart-note');
+
+  if (note) {
+    note.textContent = isProductMode
+      ? 'Products sorted by Qty Sold descending. Bars = amount, line = quantity.'
+      : 'Dates shown adaptively based on density. Bars = amount, line = quantity.';
+  }
 }
 
 function isFreeSampleSale(row) {
@@ -2589,7 +2975,7 @@ function compareDateValue(a, b) {
   return dateA.localeCompare(dateB);
 }
 
-function drawChart(id, data) {
+function drawChart(id, data, options = {}) {
   const element = $(id);
 
   if (!data || !data.length) {
@@ -2610,7 +2996,13 @@ function drawChart(id, data) {
   const qtyAxisMax = Math.max(Math.ceil(maxQty * 1.15), 1);
 
   const step = plotWidth / Math.max(data.length, 1);
-  const barWidth = Math.min(58, Math.max(24, step * 0.5));
+  const barWidth = Math.min(
+    58,
+    Math.max(
+      3,
+      step * 0.55
+    )
+  );
 
   const x = (index) => padding.left + step * index + step / 2;
   const yAmount = (value) => padding.top + plotHeight - (numberValue(value) / amountAxisMax) * plotHeight;
@@ -2699,22 +3091,96 @@ function drawChart(id, data) {
     `;
   }).join('');
 
-  const xLabels = data.map((item, index) => {
-    const labelParts = formatChartDateLabel(item.label);
+  const chartMode =
+  options.mode || 'date';
 
+  const labelCount =
+    data.length;
+
+  // Date labels dynamically adapt to density.
+  const dateLabelStep =
+    labelCount <= 12
+      ? 1
+      : Math.ceil(labelCount / 12);
+
+  const dateLabelAngle =
+    labelCount <= 8
+      ? 0
+      : labelCount <= 16
+        ? -10
+        : -18;
+  // Reduce the number of visible Product labels when crowded.
+  // All bars, dots, and hover details remain available.
+  const productLabelStep =
+    labelCount <= 14
+      ? 1
+      : Math.ceil(labelCount / 14); 
+
+  const xLabels = data.map((item, index) => {
     const labelX = x(index);
-    const labelY = height - 42;
+    const labelY = height - 43;
+
+    // Product labels use a short visible value.
+    // The complete Product Name remains in chart hover.
+    if (chartMode === 'product') {
+      // Skip some visible labels when Product count is crowded.
+        if (index % productLabelStep !== 0) {
+          return '';
+        }
+      const productLabel =
+        cleanText(item.label);
+
+      const shortProductLabel =
+        productLabel.length > 18
+          ? `${productLabel.slice(0, 17)}…`
+          : productLabel;
+
+      return `
+        <text
+          x="${labelX}"
+          y="${labelY}"
+          text-anchor="end"
+          transform="rotate(-18 ${labelX} ${labelY})"
+          class="x-axis-label"
+        >
+          ${safe(shortProductLabel)}
+        </text>
+      `;
+    }
+
+    // When dates are crowded, show only evenly spaced labels.
+    if (index % dateLabelStep !== 0) {
+      return '';
+    }
+
+    const labelParts =
+      formatChartDateLabel(item.label);
 
     return `
       <text
         x="${labelX}"
         y="${labelY}"
         text-anchor="middle"
+        transform="rotate(${dateLabelAngle} ${labelX} ${labelY})"
         class="x-axis-label"
-        transform="rotate(-10 ${labelX} ${labelY})"
       >
-        <tspan x="${labelX}" dy="0">${safe(labelParts.main)}</tspan>
-        ${labelParts.year ? `<tspan x="${labelX}" dy="13">${safe(labelParts.year)}</tspan>` : ''}
+        <tspan
+          x="${labelX}"
+          dy="0"
+        >
+          ${safe(labelParts.main)}
+        </tspan>
+
+        ${labelParts.year
+          ? `
+            <tspan
+              x="${labelX}"
+              dy="12"
+            >
+              ${safe(labelParts.year)}
+            </tspan>
+          `
+          : ''}
       </text>
     `;
   }).join('');
@@ -2767,6 +3233,66 @@ function drawChart(id, data) {
   `;
 
   attachChartTooltip(element, id);
+}
+
+function renderReportProductChecklist() {
+  const panel =
+    $('reportProductFilterPanel');
+
+  if (!panel) return;
+
+  // Combine current Stock products and historical Sales products.
+  const products = mergeUniqueSorted(
+    state.stockIndex.allProducts || [],
+
+    state.sales
+      .map((row) => cleanText(row.product_name))
+      .filter(Boolean)
+  );
+
+  const allSelected =
+    state.reportSelectedProducts.length === 0;
+
+  panel.innerHTML = `
+    <label class="product-check-option all-products-option">
+      <input
+        type="checkbox"
+        data-report-product-all
+        ${allSelected ? 'checked' : ''}
+      >
+      <span>All Products</span>
+    </label>
+
+    ${products.map((product) => `
+      <label class="product-check-option">
+        <input
+          type="checkbox"
+          data-report-product="${escapeHtml(product)}"
+          ${state.reportSelectedProducts.includes(product)
+            ? 'checked'
+            : ''}
+        >
+        <span>${escapeHtml(product)}</span>
+      </label>
+    `).join('')}
+  `;
+}
+
+function updateReportProductFilterLabel() {
+  const button =
+    $('reportProductFilterButton');
+
+  if (!button) return;
+
+  const selectedCount =
+    state.reportSelectedProducts.length;
+
+  button.textContent =
+    selectedCount === 0
+      ? 'All Products'
+      : selectedCount === 1
+        ? state.reportSelectedProducts[0]
+        : `${selectedCount} Products Selected`;
 }
 
 function formatChartDateLabel(value) {
