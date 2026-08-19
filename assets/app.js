@@ -3721,7 +3721,7 @@ async function generateInvoicePdf({
   // Product table boundaries.
   const productHeaderY = 88;
   const productStartY = 99;
-  const productEndY = 168;
+  const productEndY = 178;
   const availableProductHeight =
     productEndY - productStartY;
 
@@ -3977,11 +3977,16 @@ async function generateInvoicePdf({
     totalDiscount +
     ongkosKirim;
 
-  // Start summary after products, but keep it within the
-  // reserved calculation space.
+  // Place the calculation summary directly below the final product.
+  // Keep a small 6 mm gap and prevent overlap with Payment Information.
+  const summaryHeight = 30;
+  const summaryGap = 6;
+  const maximumSummaryY =
+    paymentTop - summaryHeight - 6;
+
   let summaryY = Math.min(
-    Math.max(y + 8, 177),
-    summaryBottom - 28
+    y + summaryGap,
+    maximumSummaryY
   );
 
   const summaryLabelX =
@@ -4341,9 +4346,25 @@ async function loadLogoDataUrl(path) {
 }
 
 function formatInvoiceDate(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return cleanText(value) || '-';
-  return date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  // Preserve the original date components without timezone shifting.
+  const text = cleanText(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+
+  if (!match) return text || '-';
+
+  // Create a local date from YYYY-MM-DD.
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+
+  const date = new Date(year, monthIndex, day);
+
+  // Professional English invoice format: 17 August 2026.
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  });
 }
 
 function invoiceCurrency(value) {
