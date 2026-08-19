@@ -3687,163 +3687,542 @@ async function downloadSalesInvoice(salesId) {
   }
 }
 
-async function generateInvoicePdf({ invoiceNumber, customerName, invoiceDate, rows }) {
-  if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF is not loaded. Please check the jsPDF script in index.html.');
+async function generateInvoicePdf({
+  invoiceNumber,
+  customerName,
+  invoiceDate,
+  rows
+}) {
+  // Confirm that jsPDF is available.
+  if (!window.jspdf?.jsPDF) {
+    throw new Error(
+      'jsPDF is not loaded. Please check the jsPDF script in index.html.'
+    );
+  }
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  // Create one A4 portrait page.
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+
   const pageWidth = 210;
   const pageHeight = 297;
-  const marginX = 16;
-  const logoDataUrl = await loadLogoDataUrl('assets/logo.png');
+  const marginX = 14;
 
-  if (logoDataUrl) doc.addImage(logoDataUrl, 'PNG', marginX, 14, 30, 30);
+  // Fixed lower sections.
+  const footerTop = 266;
+  const paymentTop = 218;
+  const summaryBottom = 208;
 
-  doc.setTextColor(INVOICE_THEME.text);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  // doc.text('LivingWord', marginX, 50);
+  // Product table boundaries.
+  const productHeaderY = 88;
+  const productStartY = 99;
+  const productEndY = 168;
+  const availableProductHeight =
+    productEndY - productStartY;
+
+  const logoDataUrl =
+    await loadLogoDataUrl('assets/logo.png');
+
+  // =======================================================
+  // Invoice header
+  // =======================================================
+
+  if (logoDataUrl) {
+    doc.addImage(
+      logoDataUrl,
+      'PNG',
+      marginX,
+      11,
+      27,
+      27
+    );
+  }
 
   doc.setTextColor(INVOICE_THEME.primary);
-  doc.setFontSize(28);
-  doc.text('INVOICE', pageWidth - marginX, 25, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(25);
+
+  doc.text(
+    'INVOICE',
+    pageWidth - marginX,
+    22,
+    { align: 'right' }
+  );
 
   doc.setTextColor(INVOICE_THEME.text);
-  doc.setFontSize(11);
-  doc.text(`No: ${invoiceNumber}`, pageWidth - marginX, 33, { align: 'right' });
+  doc.setFontSize(10);
+
+  doc.text(
+    `No: ${invoiceNumber}`,
+    pageWidth - marginX,
+    30,
+    { align: 'right' }
+  );
 
   doc.setDrawColor(INVOICE_THEME.accent);
-  doc.setLineWidth(0.8);
-  doc.line(marginX, 58, pageWidth - marginX, 58);
+  doc.setLineWidth(0.7);
+
+  doc.line(
+    marginX,
+    48,
+    pageWidth - marginX,
+    48
+  );
 
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(INVOICE_THEME.text);
-  doc.setFontSize(11);
-  doc.text(`Date: ${formatInvoiceDate(invoiceDate)}`, marginX, 70);
-  doc.text(`Customer Name: ${customerName}`, marginX, 78);
+  doc.setFontSize(10);
 
-  let y = 94;
+  doc.text(
+    `Date: ${formatInvoiceDate(invoiceDate)}`,
+    marginX,
+    59
+  );
+
+  doc.text(
+    `Customer Name: ${customerName || '-'}`,
+    marginX,
+    67
+  );
+
+  // =======================================================
+  // Calculate adaptive product-row dimensions
+  // =======================================================
+
+  const safeRows =
+    Array.isArray(rows) ? rows : [];
+
+  const productCount =
+    Math.max(safeRows.length, 1);
+
+  // Row height reduces automatically as product count grows.
+  const rowHeight = Math.max(
+    4.4,
+    Math.min(
+      8.5,
+      availableProductHeight / productCount
+    )
+  );
+
+  // Font also adapts, but stays readable.
+  const productFontSize =
+    productCount <= 8
+      ? 8.8
+      : productCount <= 12
+        ? 7.8
+        : productCount <= 16
+          ? 7
+          : 6.2;
+
+  // =======================================================
+  // Product table header
+  // =======================================================
+
   doc.setFillColor(INVOICE_THEME.primary);
-  doc.roundedRect(marginX, y - 7, pageWidth - marginX * 2, 10, 2, 2, 'F');
+
+  doc.roundedRect(
+    marginX,
+    productHeaderY - 6,
+    pageWidth - marginX * 2,
+    9,
+    1.6,
+    1.6,
+    'F'
+  );
+
   doc.setTextColor('#FFFFFF');
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Product Name', marginX + 3, y);
-  doc.text('Qty', 112, y, { align: 'right' });
-  doc.text('Price (Rp)', 150, y, { align: 'right' });
-  doc.text('Total (Rp)', pageWidth - marginX - 3, y, { align: 'right' });
+  doc.setFontSize(8.5);
 
-  y += 8;
+  doc.text(
+    'Product Name',
+    marginX + 3,
+    productHeaderY
+  );
+
+  doc.text(
+    'Qty',
+    111,
+    productHeaderY,
+    { align: 'right' }
+  );
+
+  doc.text(
+    'Price',
+    151,
+    productHeaderY,
+    { align: 'right' }
+  );
+
+  doc.text(
+    'Net Total',
+    pageWidth - marginX - 3,
+    productHeaderY,
+    { align: 'right' }
+  );
+
+  // =======================================================
+  // Product rows and calculations
+  // =======================================================
+
+  let y = productStartY;
+  let subtotal = 0;
+  let totalDiscount = 0;
+
+  // Shipping fee is an order-level amount.
+  // Use only the first row to prevent duplication.
+  const ongkosKirim =
+    numberValue(safeRows[0]?.ongkos_kirim);
+
+  safeRows.forEach((row, index) => {
+    const qty =
+      numberValue(row.qty);
+
+    const price =
+      numberValue(row.price);
+
+    const lineGross =
+      qty * price;
+
+    const lineDiscount =
+      numberValue(row.discount);
+
+    const lineNet =
+      lineGross - lineDiscount;
+
+    subtotal += lineGross;
+    totalDiscount += lineDiscount;
+
+    // Use one line for each product to maximize capacity.
+    const productName =
+      cleanText(row.product_name) || '-';
+
+    // Adjust available name width based on font size.
+    const productLines =
+      doc.splitTextToSize(productName, 75);
+
+    // Only the first line is shown in the table.
+    // The physical row remains compact.
+    const displayedProduct =
+      productLines[0] || '-';
+
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 251, 249);
+
+      doc.rect(
+        marginX,
+        y - 3.6,
+        pageWidth - marginX * 2,
+        rowHeight,
+        'F'
+      );
+    }
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(productFontSize);
+    doc.setTextColor(INVOICE_THEME.text);
+
+    doc.text(
+      displayedProduct,
+      marginX + 3,
+      y
+    );
+
+    doc.text(
+      formatNumber(qty),
+      111,
+      y,
+      { align: 'right' }
+    );
+
+    doc.text(
+      invoiceCurrency(price),
+      151,
+      y,
+      { align: 'right' }
+    );
+
+    doc.text(
+      invoiceCurrency(lineNet),
+      pageWidth - marginX - 3,
+      y,
+      { align: 'right' }
+    );
+
+    y += rowHeight;
+  });
+
+  // Product-table ending line.
+  doc.setDrawColor(INVOICE_THEME.border);
+  doc.setLineWidth(0.3);
+
+  doc.line(
+    marginX,
+    Math.min(y + 1, productEndY + 2),
+    pageWidth - marginX,
+    Math.min(y + 1, productEndY + 2)
+  );
+
+  // =======================================================
+  // Dynamic summary
+  // =======================================================
+
+  const grandTotal =
+    subtotal -
+    totalDiscount +
+    ongkosKirim;
+
+  // Start summary after products, but keep it within the
+  // reserved calculation space.
+  let summaryY = Math.min(
+    Math.max(y + 8, 177),
+    summaryBottom - 28
+  );
+
+  const summaryLabelX =
+    pageWidth - 83;
+
+  const summaryValueX =
+    pageWidth - marginX;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor(INVOICE_THEME.text);
 
-  let subtotal = 0;
-  let totalDiscount = 0;
-  const ongkosKirim = numberValue(rows[0]?.ongkos_kirim);
+  // Subtotal.
+  doc.text(
+    'Subtotal',
+    summaryLabelX,
+    summaryY
+  );
 
-  rows.forEach((row, index) => {
-    const qty = numberValue(row.qty);
-    const price = numberValue(row.price);
-    const lineGross = qty * price;
-    const lineDiscount = numberValue(row.discount);
-    const productLines = doc.splitTextToSize(cleanText(row.product_name), 82);
-    subtotal += lineGross;
-    totalDiscount += lineDiscount;
+  doc.text(
+    invoiceCurrency(subtotal),
+    summaryValueX,
+    summaryY,
+    { align: 'right' }
+  );
 
-    if (y > 185) {
-      doc.addPage();
-      y = 24;
-    }
+  // Discount.
+  summaryY += 6;
 
-    if (index % 2 === 0) {
-      doc.setFillColor(255, 255, 255);
-      doc.rect(marginX, y - 5, pageWidth - marginX * 2, 8, 'F');
-    }
+  doc.text(
+    'Discount',
+    summaryLabelX,
+    summaryY
+  );
 
-    doc.text(productLines, marginX + 3, y);
-    doc.text(formatNumber(qty), 112, y, { align: 'right' });
-    doc.text(invoiceCurrency(price), 150, y, { align: 'right' });
-    doc.text(invoiceCurrency(lineGross), pageWidth - marginX - 3, y, { align: 'right' });
-    y += Math.max(8, productLines.length * 5);
-  });
+  doc.text(
+    `- ${invoiceCurrency(totalDiscount)}`,
+    summaryValueX,
+    summaryY,
+    { align: 'right' }
+  );
 
-  doc.setDrawColor(INVOICE_THEME.border);
-  doc.setLineWidth(0.3);
-  doc.line(marginX, y + 2, pageWidth - marginX, y + 2);
+  // Ongkos Kirim.
+  summaryY += 6;
 
-  const grandTotal = subtotal - totalDiscount + ongkosKirim;
+  doc.text(
+    'Ongkos Kirim',
+    summaryLabelX,
+    summaryY
+  );
 
-  y += 12;
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(INVOICE_THEME.text);
-  doc.text('Subtotal', pageWidth - 86, y, { align: 'left' });
-  doc.text(invoiceCurrency(subtotal), pageWidth - marginX, y, { align: 'right' });
+  doc.text(
+    invoiceCurrency(ongkosKirim),
+    summaryValueX,
+    summaryY,
+    { align: 'right' }
+  );
 
-  y += 6;
-  doc.text('Discount', pageWidth - 86, y, { align: 'left' });
-  doc.text(`- ${invoiceCurrency(totalDiscount)}`, pageWidth - marginX, y, { align: 'right' });
+  // Grand Total.
+  summaryY += 8;
 
-  y += 6;
-  doc.text('Ongkos Kirim', pageWidth - 86, y, { align: 'left' });
-  doc.text(invoiceCurrency(ongkosKirim), pageWidth - marginX, y, { align: 'right' });
-
-  y += 8;
   doc.setDrawColor(INVOICE_THEME.primary);
   doc.setLineWidth(0.5);
-  doc.line(pageWidth - 86, y - 4, pageWidth - marginX, y - 4);
+
+  doc.line(
+    summaryLabelX,
+    summaryY - 4,
+    summaryValueX,
+    summaryY - 4
+  );
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(INVOICE_THEME.primary);
-  doc.text('Grand Total', pageWidth - 86, y + 2, { align: 'left' });
-  doc.text(invoiceCurrency(grandTotal), pageWidth - marginX, y + 2, { align: 'right' });
 
-  drawPaymentSection(doc, marginX, 180);
-  drawInvoiceFooter(doc, pageWidth, pageHeight, marginX);
-  doc.save(`Invoice_${safeFileName(invoiceNumber)}.pdf`);
+  doc.text(
+    'Grand Total',
+    summaryLabelX,
+    summaryY + 1
+  );
+
+  doc.text(
+    invoiceCurrency(grandTotal),
+    summaryValueX,
+    summaryY + 1,
+    { align: 'right' }
+  );
+
+  // =======================================================
+  // Payment Information close to the footer
+  // =======================================================
+
+  drawCompactPaymentSection(
+    doc,
+    marginX,
+    paymentTop,
+    pageWidth
+  );
+
+  // Footer remains at the bottom of the same page.
+  drawInvoiceFooter(
+    doc,
+    pageWidth,
+    pageHeight,
+    marginX
+  );
+
+  // Download the one-page invoice.
+  doc.save(
+    `Invoice_${safeFileName(invoiceNumber)}.pdf`
+  );
 }
 
-function drawPaymentSection(doc, marginX, paymentY) {
+function drawCompactPaymentSection(
+  doc,
+  marginX,
+  paymentY,
+  pageWidth
+) {
+  // Compact payment layout to preserve product space.
   const paymentRows = [
     ['Account Name', 'Berita Baik Indonesia PT'],
     ['Account No', '1466777880'],
     ['SWIFT No', 'CENAIDJA'],
     ['Account Holder Address', 'Jl. Gunung Catur IV No. 8'],
     ['Bank Name / Branch', 'Bank Central Asia (BCA)'],
-    ['Bank Address', 'Jl. Sunset Road No. 88B, Kuta, Kabupaten Badung, Bali, Indonesia']
+    [
+      'Bank Address',
+      'Jl. Sunset Road No. 88B, Kuta, Kabupaten Badung, Bali, Indonesia'
+    ]
   ];
 
+  // Compact payment background.
   doc.setFillColor(INVOICE_THEME.lightBg);
-  doc.roundedRect(marginX, paymentY - 8, 178, 58, 3, 3, 'F');
+
+  doc.roundedRect(
+    marginX,
+    paymentY - 7,
+    pageWidth - marginX * 2,
+    40,
+    2.5,
+    2.5,
+    'F'
+  );
 
   doc.setTextColor(INVOICE_THEME.primary);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text('Payment Information', marginX + 5, paymentY);
+  doc.setFontSize(10.5);
+
+  doc.text(
+    'Payment Information',
+    marginX + 4,
+    paymentY
+  );
 
   doc.setDrawColor(INVOICE_THEME.accent);
-  doc.setLineWidth(0.6);
-  doc.line(marginX + 5, paymentY + 4, marginX + 58, paymentY + 4);
+  doc.setLineWidth(0.5);
 
-  let y = paymentY + 14;
+  doc.line(
+    marginX + 4,
+    paymentY + 3,
+    marginX + 46,
+    paymentY + 3
+  );
 
-  paymentRows.forEach(([labelText, valueText]) => {
-    doc.setFillColor(INVOICE_THEME.accent);
-    doc.circle(marginX + 6, y - 1.5, 1.2, 'F');
+  // Show payment details in two columns.
+  const leftRows =
+    paymentRows.slice(0, 3);
 
+  const rightRows =
+    paymentRows.slice(3);
+
+  const leftX =
+    marginX + 4;
+
+  const leftValueX =
+    marginX + 34;
+
+  const rightX =
+    marginX + 92;
+
+  const rightValueX =
+    marginX + 128;
+
+  let leftY =
+    paymentY + 10;
+
+  leftRows.forEach(([labelText, valueText]) => {
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8.8);
+    doc.setFontSize(7.2);
     doc.setTextColor(INVOICE_THEME.text);
-    doc.text(labelText, marginX + 11, y);
+
+    doc.text(
+      labelText,
+      leftX,
+      leftY
+    );
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.8);
 
-    const valueLines = doc.splitTextToSize(valueText, 112);
-    doc.text(valueLines, 66, y);
+    doc.text(
+      valueText,
+      leftValueX,
+      leftY
+    );
 
-    y += Math.max(6, valueLines.length * 4.8);
+    leftY += 7;
+  });
+
+  let rightY =
+    paymentY + 10;
+
+  rightRows.forEach(([labelText, valueText]) => {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.2);
+    doc.setTextColor(INVOICE_THEME.text);
+
+    doc.text(
+      labelText,
+      rightX,
+      rightY
+    );
+
+    doc.setFont('helvetica', 'normal');
+
+    const valueLines =
+      doc.splitTextToSize(
+        valueText,
+        pageWidth - marginX - rightValueX
+      );
+
+    doc.text(
+      valueLines,
+      rightValueX,
+      rightY
+    );
+
+    rightY += Math.max(
+      7,
+      valueLines.length * 3.5
+    );
   });
 }
 
