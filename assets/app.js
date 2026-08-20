@@ -59,6 +59,13 @@ const state = {
   // Aggregated Product chart data.
   reportProductTimeSeries: [],
 
+  // Tracks whether the user has already loaded a report.
+  // This remains true even when a valid report returns zero rows.
+  reportHasLoaded: false,
+
+  // Prevents an older report request from replacing a newer one.
+  reportRequestId: 0,
+
   latestSalesDateBySku: {},
   stockIndex: {
     allLocations: [], allProducts: [], availableProducts: [], allSkus: [], availableSkus: [],
@@ -931,7 +938,6 @@ function bindEvents() {
   // =======================================================
   // Sales Trend mode: By Date or By Product
   // =======================================================
-
   document
     .querySelectorAll('[data-trend-mode]')
     .forEach((button) => {
@@ -940,13 +946,21 @@ function bindEvents() {
         state.reportChartMode =
           button.dataset.trendMode || 'date';
 
-        // Update the visual active state.
+        // Keep the visual and accessibility states synchronized.
         document
           .querySelectorAll('[data-trend-mode]')
           .forEach((item) => {
+            const isActive =
+              item === button;
+
             item.classList.toggle(
               'active',
-              item === button
+              isActive
+            );
+
+            item.setAttribute(
+              'aria-pressed',
+              String(isActive)
             );
           });
 
@@ -956,56 +970,105 @@ function bindEvents() {
     });
 
   // =======================================================
-  // Product multi-select checklist
+  // Product Name Stock-based slicer
   // =======================================================
+  const productFilterButton =
+    $('reportProductFilterButton');
 
-  $('reportProductFilterButton')
+  const productFilterPanel =
+    $('reportProductFilterPanel');
+
+  const productFilterSearch =
+    $('reportProductFilterSearch');
+
+  // Open or close the floating Product filter.
+  productFilterButton
     ?.addEventListener('click', () => {
-      const panel =
-        $('reportProductFilterPanel');
+      if (!productFilterPanel) return;
 
-      if (!panel) return;
+      const willOpen =
+        productFilterPanel.hidden;
 
-      // Refresh the checklist before opening.
-      renderReportProductChecklist();
+      productFilterPanel.hidden =
+        !willOpen;
 
-      // Open or close the checklist.
-      panel.hidden = !panel.hidden;
-    });
+      productFilterButton.setAttribute(
+        'aria-expanded',
+        String(willOpen)
+      );
 
-  $('reportProductFilterPanel')
-    ?.addEventListener('change', (event) => {
-      const input = event.target;
-
-      // Ignore changes that do not come from checkboxes.
-      if (!(input instanceof HTMLInputElement)) {
-        return;
-      }
-
-      // All Products means no Product Name filter.
-      if (input.matches('[data-report-product-all]')) {
-        state.reportSelectedProducts = [];
-
-        renderReportProductChecklist();
-        updateReportProductFilterLabel();
-
-        // Reload an existing report using all products.
-        if (state.reportRows.length) {
-          loadReport();
+      if (willOpen) {
+        if (productFilterSearch) {
+          productFilterSearch.value = '';
         }
 
-        return;
-      }
+        renderReportProductChecklist('');
 
-      // Handle individual Product selection.
-      if (input.matches('[data-report-product]')) {
+        requestAnimationFrame(() => {
+          productFilterSearch?.focus();
+        });
+      }
+    });
+
+  // Search changes only the visible Stock Product options.
+  productFilterSearch
+    ?.addEventListener('input', (event) => {
+      renderReportProductChecklist(
+        event.target.value
+      );
+    });
+
+  // Manage Select All and individual Product selections.
+  $('reportProductFilterOptions')
+    ?.addEventListener(
+      'change',
+      async (event) => {
+        const input =
+          event.target;
+
+        if (!(input instanceof HTMLInputElement)) {
+          return;
+        }
+
+        // Select All resets the individual Product filter.
+        if (
+          input.matches(
+            '[data-report-product-all]'
+          )
+        ) {
+          state.reportSelectedProducts = [];
+
+          renderReportProductChecklist(
+            productFilterSearch?.value || ''
+          );
+
+          updateReportProductFilterLabel();
+
+          if (state.reportHasLoaded) {
+            await loadReport();
+          }
+
+          return;
+        }
+
+        // Ignore unrelated inputs.
+        if (
+          !input.matches(
+            '[data-report-product]'
+          )
+        ) {
+          return;
+        }
+
         const product =
-          cleanText(input.dataset.reportProduct);
+          cleanText(
+            input.dataset.reportProduct
+          );
 
         if (!product) return;
 
         if (input.checked) {
-          // Add the Product without creating duplicates.
+          // Add selected Product without duplicates.
           state.reportSelectedProducts = [
             ...new Set([
               ...state.reportSelectedProducts,
@@ -1013,43 +1076,81 @@ function bindEvents() {
             ])
           ];
         } else {
-          // Remove the unchecked Product.
+          // Remove unchecked Product.
           state.reportSelectedProducts =
             state.reportSelectedProducts.filter(
-              (item) => item !== product
+              (selectedProduct) =>
+                selectedProduct !== product
             );
         }
+
+        // Empty individual selection means All Products.
+        renderReportProductChecklist(
+          productFilterSearch?.value || ''
+        );
+
+        updateReportProductFilterLabel();
+
+        // Reload all report components from the same filter.
+        if (state.reportHasLoaded) {
+          await loadReport();
+        }
+      }
+    );
+
+  // Close the floating filter when clicking outside.
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      if (
+        !productFilterPanel ||
+        productFilterPanel.hidden
+      ) {
+        return;
       }
 
-      // An empty individual selection automatically means
-      // All Products.
-      renderReportProductChecklist();
-      updateReportProductFilterLabel();
-      if (state.reportRows.length) {
-        loadReport();
-        }
-    });
+      if (
+        productFilterPanel.contains(
+          event.target
+        ) ||
+        productFilterButton?.contains(
+          event.target
+        )
+      ) {
+        return;
+      }
 
-  // Close the Product checklist when clicking outside it.
-  document.addEventListener('pointerdown', (event) => {
-    const panel =
-      $('reportProductFilterPanel');
+      productFilterPanel.hidden = true;
 
-    const button =
-      $('reportProductFilterButton');
-
-    if (
-      !panel ||
-      panel.hidden ||
-      panel.contains(event.target) ||
-      button?.contains(event.target)
-    ) {
-      return;
+      productFilterButton?.setAttribute(
+        'aria-expanded',
+        'false'
+      );
     }
+  );
 
-    panel.hidden = true;
-  });
+  // Close the filter using Escape.
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (
+        event.key !== 'Escape' ||
+        !productFilterPanel ||
+        productFilterPanel.hidden
+      ) {
+        return;
+      }
 
+      productFilterPanel.hidden = true;
+
+      productFilterButton?.setAttribute(
+        'aria-expanded',
+        'false'
+      );
+
+      productFilterButton?.focus();
+    }
+  );
   // =======================================================
   // Main navigation
   // =======================================================
@@ -1976,34 +2077,97 @@ function renderReportInputs() {
 }
 
 async function loadReport(event) {
-  if (event) event.preventDefault();
+  if (event) {
+    event.preventDefault();
+  }
+
   if (!ensureClient()) return;
 
   const range = getRange();
+
   if (!range) return;
 
-  let query = state.client.from('sales').select('*').eq('status', 'ACTIVE').gte('sale_date', range.startDate).lte('sale_date', range.endDate).order('sale_date', { ascending: true });
-  // Filter by selected Product Names only when
-  // individual products are explicitly selected.
+  // Mark this as the newest report request.
+  const requestId =
+    ++state.reportRequestId;
+
+  let query = state.client
+    .from('sales')
+    .select('*')
+    .eq('status', 'ACTIVE')
+    .gte(
+      'sale_date',
+      range.startDate
+    )
+    .lte(
+      'sale_date',
+      range.endDate
+    )
+    .order(
+      'sale_date',
+      {
+        ascending: true
+      }
+    );
+
+  // Product options originate from Stock, while the report
+  // retrieves Sales rows matching the selected Product Names.
   if (state.reportSelectedProducts.length) {
     query = query.in(
       'product_name',
       state.reportSelectedProducts
     );
   }
-  const sku = cleanText($('reportSkuFilter')?.value);
-  const location = cleanText($('reportLocationFilter')?.value);
 
-  if (sku) query = query.ilike('sku', `%${sku}%`);
-  if (location) query = query.ilike('location', `%${location}%`);
+  const sku =
+    cleanText(
+      $('reportSkuFilter')?.value
+    );
 
-  const { data, error } = await query;
-  if (error) return showMessage(error.message, 'err');
+  const location =
+    cleanText(
+      $('reportLocationFilter')?.value
+    );
 
+  if (sku) {
+    query = query.ilike(
+      'sku',
+      `%${sku}%`
+    );
+  }
+
+  if (location) {
+    query = query.ilike(
+      'location',
+      `%${location}%`
+    );
+  }
+
+  const { data, error } =
+    await query;
+
+  // Ignore stale results from an older filter selection.
+  if (requestId !== state.reportRequestId) {
+    return;
+  }
+
+  if (error) {
+    return showMessage(
+      error.message,
+      'err'
+    );
+  }
+
+  state.reportHasLoaded = true;
+
+  // Every chart and summary receives the same filtered rows.
   buildReport(data || []);
-  showMessage('Report loaded.', 'ok');
-}
 
+  showMessage(
+    'Report loaded.',
+    'ok'
+  );
+}
 function buildReport(rows) {
   state.reportRows = rows;
 
@@ -2975,27 +3139,176 @@ function compareDateValue(a, b) {
   return dateA.localeCompare(dateB);
 }
 
+function wrapChartProductLabel(
+  value,
+  maximumCharacters = 18
+) {
+  // Preserve the complete Product Name and wrap it by words.
+  const text =
+    cleanText(value) || '-';
+
+  const words =
+    text.split(/\s+/);
+
+  const lines = [];
+  let currentLine = '';
+
+  words.forEach((word) => {
+    // Split a single unusually long word so it cannot overflow.
+    if (word.length > maximumCharacters) {
+      if (currentLine) {
+        lines.push(currentLine);
+        currentLine = '';
+      }
+
+      for (
+        let index = 0;
+        index < word.length;
+        index += maximumCharacters
+      ) {
+        lines.push(
+          word.slice(
+            index,
+            index + maximumCharacters
+          )
+        );
+      }
+
+      return;
+    }
+
+    const candidate =
+      currentLine
+        ? `${currentLine} ${word}`
+        : word;
+
+    if (candidate.length <= maximumCharacters) {
+      currentLine = candidate;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+
+      currentLine = word;
+    }
+  });
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines.length
+    ? lines
+    : ['-'];
+}
+
 function drawChart(id, data, options = {}) {
   const element = $(id);
 
+  if (!element) return;
+
   if (!data || !data.length) {
-    element.innerHTML = '<div class="empty-state">No report data.</div>';
+    element.innerHTML =
+      '<div class="empty-state">No report data.</div>';
+
     return;
   }
 
-  const width = 1120;
-  const height = 470;
-  const padding = { top: 48, right: 92, bottom: 92, left: 92 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
+  const chartMode =
+    options.mode || 'date';
 
-  const maxAmount = Math.max(...data.map((item) => numberValue(item.amount)), 1);
-  const maxQty = Math.max(...data.map((item) => numberValue(item.qty)), 1);
+  const isProductMode =
+    chartMode === 'product';
 
-  const amountAxisMax = maxAmount * 1.15;
-  const qtyAxisMax = Math.max(Math.ceil(maxQty * 1.15), 1);
+  // Prepare complete wrapped Product Names before sizing the chart.
+  const productLabelLines =
+    isProductMode
+      ? data.map((item) =>
+          wrapChartProductLabel(
+            item.label,
+            18
+          )
+        )
+      : [];
 
-  const step = plotWidth / Math.max(data.length, 1);
+  const maximumProductLabelLines =
+    isProductMode
+      ? Math.max(
+          ...productLabelLines.map(
+            (lines) => lines.length
+          ),
+          1
+        )
+      : 1;
+
+  // Product mode gives every product a readable slot.
+  // Many products expand the SVG and enable horizontal scrolling.
+  const productSlotWidth = 110;
+
+  const width =
+    isProductMode
+      ? Math.max(
+          1120,
+          data.length *
+            productSlotWidth +
+            184
+        )
+      : 1120;
+
+  const plotHeight = 330;
+
+  const bottomPadding =
+    isProductMode
+      ? Math.max(
+          92,
+          38 +
+            maximumProductLabelLines * 13
+        )
+      : 92;
+
+  const padding = {
+    top: 48,
+    right: 92,
+    bottom: bottomPadding,
+    left: 92
+  };
+
+  const height =
+    padding.top +
+    plotHeight +
+    padding.bottom;
+
+  const plotWidth =
+    width -
+    padding.left -
+    padding.right;
+
+  const maxAmount = Math.max(
+    ...data.map((item) =>
+      numberValue(item.amount)
+    ),
+    1
+  );
+
+  const maxQty = Math.max(
+    ...data.map((item) =>
+      numberValue(item.qty)
+    ),
+    1
+  );
+
+  const amountAxisMax =
+    maxAmount * 1.15;
+
+  const qtyAxisMax = Math.max(
+    Math.ceil(maxQty * 1.15),
+    1
+  );
+
+  const step =
+    plotWidth /
+    Math.max(data.length, 1);
+
   const barWidth = Math.min(
     58,
     Math.max(
@@ -3004,100 +3317,172 @@ function drawChart(id, data, options = {}) {
     )
   );
 
-  const x = (index) => padding.left + step * index + step / 2;
-  const yAmount = (value) => padding.top + plotHeight - (numberValue(value) / amountAxisMax) * plotHeight;
-  const yQty = (value) => padding.top + plotHeight - (numberValue(value) / qtyAxisMax) * plotHeight;
-  const safe = (value) => escapeHtml(String(value));
+  const x = (index) =>
+    padding.left +
+    step * index +
+    step / 2;
+
+  const yAmount = (value) =>
+    padding.top +
+    plotHeight -
+    (
+      numberValue(value) /
+      amountAxisMax
+    ) * plotHeight;
+
+  const yQty = (value) =>
+    padding.top +
+    plotHeight -
+    (
+      numberValue(value) /
+      qtyAxisMax
+    ) * plotHeight;
+
+  const safe = (value) =>
+    escapeHtml(String(value));
 
   const shortAmount = (value) => {
-    const number = numberValue(value);
-    if (number >= 1000000000) return `${(number / 1000000000).toFixed(1)}B`;
-    if (number >= 1000000) return `${(number / 1000000).toFixed(1)}M`;
-    if (number >= 1000) return `${(number / 1000).toFixed(0)}K`;
+    const number =
+      numberValue(value);
+
+    if (number >= 1000000000) {
+      return `${(number / 1000000000).toFixed(1)}B`;
+    }
+
+    if (number >= 1000000) {
+      return `${(number / 1000000).toFixed(1)}M`;
+    }
+
+    if (number >= 1000) {
+      return `${(number / 1000).toFixed(0)}K`;
+    }
+
     return formatNumber(number);
   };
 
-  const amountTicks = [0, 0.25, 0.5, 0.75, 1];
-  const qtyTicks = integerTicks(qtyAxisMax);
+  const amountTicks = [
+    0,
+    0.25,
+    0.5,
+    0.75,
+    1
+  ];
 
-  const amountAxis = amountTicks.map((ratio) => {
-    const y = padding.top + plotHeight - ratio * plotHeight;
+  const qtyTicks =
+    integerTicks(qtyAxisMax);
 
-    return `
-      <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" class="grid-line"></line>
-      <text x="${padding.left - 14}" y="${y + 4}" text-anchor="end" class="axis-label amount-axis-label">
-        ${safe(shortAmount(amountAxisMax * ratio))}
-      </text>
-    `;
-  }).join('');
+  const amountAxis = amountTicks
+    .map((ratio) => {
+      const tickY =
+        padding.top +
+        plotHeight -
+        ratio * plotHeight;
 
-  const qtyAxis = qtyTicks.map((tick) => {
-    const y = yQty(tick);
+      return `
+        <line x1="${padding.left}" y1="${tickY}" x2="${width - padding.right}" y2="${tickY}" class="grid-line"></line>
+        <text x="${padding.left - 14}" y="${tickY + 4}" text-anchor="end" class="axis-label amount-axis-label">
+          ${safe(shortAmount(amountAxisMax * ratio))}
+        </text>
+      `;
+    })
+    .join('');
 
-    return `
-      <text x="${width - padding.right + 14}" y="${y + 4}" text-anchor="start" class="axis-label qty-axis-label">
-        ${safe(tick)}
-      </text>
-    `;
-  }).join('');
+  const qtyAxis = qtyTicks
+    .map((tick) => {
+      const tickY =
+        yQty(tick);
+
+      return `
+        <text x="${width - padding.right + 14}" y="${tickY + 4}" text-anchor="start" class="axis-label qty-axis-label">
+          ${safe(tick)}
+        </text>
+      `;
+    })
+    .join('');
 
   const axisTitles = `
     <text x="${padding.left}" y="24" text-anchor="start" class="axis-title amount-title">Sales Amount</text>
     <text x="${width - padding.right}" y="24" text-anchor="end" class="axis-title qty-title">Qty Sold</text>
   `;
 
-  const highestAmount = Math.max(...data.map((item) => numberValue(item.amount)));
+  const highestAmount = Math.max(
+    ...data.map((item) =>
+      numberValue(item.amount)
+    )
+  );
 
-  const bars = data.map((item, index) => {
-    const amount = numberValue(item.amount);
-    const barHeight = padding.top + plotHeight - yAmount(amount);
-    const barX = x(index) - barWidth / 2;
-    const barY = yAmount(amount);
-    const barClass = amount === highestAmount
-      ? 'amount-bar max-bar chart-hover'
-      : 'amount-bar chart-hover';
+  const bars = data
+    .map((item, index) => {
+      const amount =
+        numberValue(item.amount);
 
-    const tooltip = `${item.label} | Amount: ${formatCurrency(amount)} | Qty: ${formatNumber(item.qty)}`;
+      const barHeight =
+        padding.top +
+        plotHeight -
+        yAmount(amount);
 
-    return `
-      <rect
-        x="${barX}"
-        y="${barY}"
-        width="${barWidth}"
-        height="${barHeight}"
-        rx="9"
-        class="${barClass}"
-        data-tooltip="${safe(tooltip)}"
-      ></rect>
-    `;
-  }).join('');
+      const barX =
+        x(index) -
+        barWidth / 2;
 
-  const linePoints = data.map((item, index) => {
-    return `${x(index)},${yQty(item.qty)}`;
-  }).join(' ');
+      const barY =
+        yAmount(amount);
 
-  const qtyDots = data.map((item, index) => {
-    const qty = numberValue(item.qty);
-    const tooltip = `${item.label} | Qty: ${formatNumber(qty)} | Amount: ${formatCurrency(item.amount)}`;
+      const barClass =
+        amount === highestAmount
+          ? 'amount-bar max-bar chart-hover'
+          : 'amount-bar chart-hover';
 
-    return `
-      <circle
-        cx="${x(index)}"
-        cy="${yQty(qty)}"
-        r="5.8"
-        class="qty-dot chart-hover"
-        data-tooltip="${safe(tooltip)}"
-      ></circle>
-    `;
-  }).join('');
+      const tooltip =
+        `${item.label} | ` +
+        `Amount: ${formatCurrency(amount)} | ` +
+        `Qty: ${formatNumber(item.qty)}`;
 
-  const chartMode =
-  options.mode || 'date';
+      return `
+        <rect
+          x="${barX}"
+          y="${barY}"
+          width="${barWidth}"
+          height="${barHeight}"
+          rx="${Math.min(9, barWidth / 2)}"
+          class="${barClass}"
+          data-tooltip="${safe(tooltip)}"
+        ></rect>
+      `;
+    })
+    .join('');
+
+  const linePoints = data
+    .map((item, index) =>
+      `${x(index)},${yQty(item.qty)}`
+    )
+    .join(' ');
+
+  const qtyDots = data
+    .map((item, index) => {
+      const qty =
+        numberValue(item.qty);
+
+      const tooltip =
+        `${item.label} | ` +
+        `Qty: ${formatNumber(qty)} | ` +
+        `Amount: ${formatCurrency(item.amount)}`;
+
+      return `
+        <circle
+          cx="${x(index)}"
+          cy="${yQty(qty)}"
+          r="5.8"
+          class="qty-dot chart-hover"
+          data-tooltip="${safe(tooltip)}"
+        ></circle>
+      `;
+    })
+    .join('');
 
   const labelCount =
     data.length;
 
-  // Date labels dynamically adapt to density.
   const dateLabelStep =
     labelCount <= 12
       ? 1
@@ -3109,83 +3494,88 @@ function drawChart(id, data, options = {}) {
       : labelCount <= 16
         ? -10
         : -18;
-  // Reduce the number of visible Product labels when crowded.
-  // All bars, dots, and hover details remain available.
-  const productLabelStep =
-    labelCount <= 14
-      ? 1
-      : Math.ceil(labelCount / 14); 
 
-  const xLabels = data.map((item, index) => {
-    const labelX = x(index);
-    const labelY = height - 43;
+  const xLabels = data
+    .map((item, index) => {
+      const labelX =
+        x(index);
 
-    // Product labels use a short visible value.
-    // The complete Product Name remains in chart hover.
-    if (chartMode === 'product') {
-      // Skip some visible labels when Product count is crowded.
-        if (index % productLabelStep !== 0) {
-          return '';
-        }
-      const productLabel =
-        cleanText(item.label);
+      const labelY =
+        padding.top +
+        plotHeight +
+        21;
 
-      const shortProductLabel =
-        productLabel.length > 18
-          ? `${productLabel.slice(0, 17)}…`
-          : productLabel;
+      // Product mode shows every complete Product Name.
+      if (isProductMode) {
+        const lines =
+          productLabelLines[index];
+
+        const tspans = lines
+          .map((line, lineIndex) => `
+            <tspan
+              x="${labelX}"
+              dy="${lineIndex === 0 ? 0 : 13}"
+            >
+              ${safe(line)}
+            </tspan>
+          `)
+          .join('');
+
+        return `
+          <text
+            x="${labelX}"
+            y="${labelY}"
+            text-anchor="middle"
+            class="x-axis-label product-axis-label"
+          >
+            ${tspans}
+          </text>
+        `;
+      }
+
+      // Date mode reduces only visible labels when crowded.
+      if (index % dateLabelStep !== 0) {
+        return '';
+      }
+
+      const labelParts =
+        formatChartDateLabel(item.label);
 
       return `
         <text
           x="${labelX}"
           y="${labelY}"
-          text-anchor="end"
-          transform="rotate(-18 ${labelX} ${labelY})"
+          text-anchor="middle"
+          transform="rotate(${dateLabelAngle} ${labelX} ${labelY})"
           class="x-axis-label"
         >
-          ${safe(shortProductLabel)}
+          <tspan x="${labelX}" dy="0">
+            ${safe(labelParts.main)}
+          </tspan>
+          ${labelParts.year
+            ? `
+              <tspan x="${labelX}" dy="12">
+                ${safe(labelParts.year)}
+              </tspan>
+            `
+            : ''}
         </text>
       `;
-    }
+    })
+    .join('');
 
-    // When dates are crowded, show only evenly spaced labels.
-    if (index % dateLabelStep !== 0) {
-      return '';
-    }
+  element.classList.toggle(
+    'product-chart-mode',
+    isProductMode
+  );
 
-    const labelParts =
-      formatChartDateLabel(item.label);
+  element.classList.toggle(
+    'date-chart-mode',
+    !isProductMode
+  );
 
-    return `
-      <text
-        x="${labelX}"
-        y="${labelY}"
-        text-anchor="middle"
-        transform="rotate(${dateLabelAngle} ${labelX} ${labelY})"
-        class="x-axis-label"
-      >
-        <tspan
-          x="${labelX}"
-          dy="0"
-        >
-          ${safe(labelParts.main)}
-        </tspan>
-
-        ${labelParts.year
-          ? `
-            <tspan
-              x="${labelX}"
-              dy="12"
-            >
-              ${safe(labelParts.year)}
-            </tspan>
-          `
-          : ''}
-      </text>
-    `;
-  }).join('');
-
-  element.style.position = 'relative';
+  element.style.position =
+    'relative';
 
   element.innerHTML = `
     <div id="${id}Tooltip" style="
@@ -3205,20 +3595,22 @@ function drawChart(id, data, options = {}) {
       font-weight:750;
       white-space:nowrap;
     "></div>
-
-    <svg class="combo-chart advanced-chart" viewBox="0 0 ${width} ${height}" role="img">
+    <svg
+      class="combo-chart advanced-chart"
+      viewBox="0 0 ${width} ${height}"
+      role="img"
+      style="display:block; width:${width}px; min-width:${width}px; height:auto;"
+    >
       <style>
         .chart-hover {
           transition: opacity 160ms ease, filter 160ms ease;
           cursor: pointer;
         }
-
         .chart-hover:hover {
           opacity: 0.82;
           filter: drop-shadow(0 5px 8px rgba(80, 96, 58, 0.28));
         }
       </style>
-
       <rect x="0" y="0" width="${width}" height="${height}" class="chart-bg"></rect>
       ${axisTitles}
       ${amountAxis}
@@ -3232,69 +3624,136 @@ function drawChart(id, data, options = {}) {
     </svg>
   `;
 
-  attachChartTooltip(element, id);
-}
-
-function renderReportProductChecklist() {
-  const panel =
-    $('reportProductFilterPanel');
-
-  if (!panel) return;
-
-  // Combine current Stock products and historical Sales products.
-  const products = mergeUniqueSorted(
-    state.stockIndex.allProducts || [],
-
-    state.sales
-      .map((row) => cleanText(row.product_name))
-      .filter(Boolean)
+  attachChartTooltip(
+    element,
+    id
   );
+}
+function renderReportProductChecklist(
+  searchText = ''
+) {
+  const optionsContainer =
+    $('reportProductFilterOptions');
+
+  if (!optionsContainer) return;
+
+  // Product filter options come only from active Stock data.
+  const allProducts =
+    state.stockIndex.allProducts || [];
+
+  const normalizedSearch =
+    cleanText(searchText).toLowerCase();
+
+  const visibleProducts =
+    normalizedSearch
+      ? allProducts.filter(
+          (product) =>
+            product
+              .toLowerCase()
+              .includes(normalizedSearch)
+        )
+      : allProducts;
 
   const allSelected =
     state.reportSelectedProducts.length === 0;
 
-  panel.innerHTML = `
-    <label class="product-check-option all-products-option">
-      <input
-        type="checkbox"
-        data-report-product-all
-        ${allSelected ? 'checked' : ''}
-      >
-      <span>All Products</span>
-    </label>
+  const selectAllOption =
+    normalizedSearch
+      ? ''
+      : `
+        <label class="product-check-option all-products-option">
+          <input
+            type="checkbox"
+            data-report-product-all
+            ${allSelected ? 'checked' : ''}
+          >
+          <span>Select all products</span>
+        </label>
+      `;
 
-    ${products.map((product) => `
-      <label class="product-check-option">
-        <input
-          type="checkbox"
-          data-report-product="${escapeHtml(product)}"
-          ${state.reportSelectedProducts.includes(product)
-            ? 'checked'
-            : ''}
-        >
-        <span>${escapeHtml(product)}</span>
-      </label>
-    `).join('')}
-  `;
+  const productOptions = visibleProducts
+    .map((product) => {
+      const isSelected =
+        state.reportSelectedProducts.includes(product);
+
+      return `
+        <label class="product-check-option">
+          <input
+            type="checkbox"
+            data-report-product="${escapeHtml(product)}"
+            ${isSelected ? 'checked' : ''}
+          >
+          <span title="${escapeHtml(product)}">
+            ${escapeHtml(product)}
+          </span>
+        </label>
+      `;
+    })
+    .join('');
+
+  optionsContainer.innerHTML =
+    selectAllOption +
+    (productOptions || `
+      <div class="product-filter-empty">
+        No matching products in Stock
+      </div>
+    `);
 }
 
 function updateReportProductFilterLabel() {
-  const button =
-    $('reportProductFilterButton');
+  const selectionText =
+    $('reportProductFilterSelection');
 
-  if (!button) return;
+  const countBadge =
+    $('reportProductFilterCount');
+
+  if (!selectionText || !countBadge) {
+    return;
+  }
 
   const selectedCount =
     state.reportSelectedProducts.length;
 
-  button.textContent =
-    selectedCount === 0
-      ? 'All Products'
-      : selectedCount === 1
-        ? state.reportSelectedProducts[0]
-        : `${selectedCount} Products Selected`;
-}
+  if (selectedCount === 0) {
+    selectionText.textContent =
+      'All Products';
 
+    selectionText.title =
+      'All Products';
+
+    countBadge.hidden = true;
+    countBadge.textContent = '0';
+
+    return;
+  }
+
+  if (selectedCount === 1) {
+    const selectedProduct =
+      state.reportSelectedProducts[0];
+
+    selectionText.textContent =
+      selectedProduct;
+
+    selectionText.title =
+      selectedProduct;
+
+    countBadge.hidden = true;
+    countBadge.textContent = '1';
+
+    return;
+  }
+
+  selectionText.textContent =
+    'Selected Products';
+
+  selectionText.title =
+    state.reportSelectedProducts.join(', ');
+
+  countBadge.textContent =
+    String(selectedCount);
+
+  countBadge.hidden = false;
+}
 function formatChartDateLabel(value) {
   // Convert chart label from YYYY-MM-DD into two-line date format.
   const text = cleanText(value);

@@ -381,23 +381,71 @@
 
           <div id="reportDynamicInputs" class="report-dynamic-inputs"></div>
 
-          <label>
-            Product Name
+          <div class="report-product-filter">
+            <label
+              class="report-product-filter-label"
+              for="reportProductFilterButton"
+            >
+              Product Name
+            </label>
 
             <button
               type="button"
               class="product-filter-button"
               id="reportProductFilterButton"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+              aria-controls="reportProductFilterPanel"
             >
-              All Products
+              <span
+                class="product-filter-selection"
+                id="reportProductFilterSelection"
+              >
+                All Products
+              </span>
+
+              <span
+                class="product-filter-count"
+                id="reportProductFilterCount"
+                hidden
+              >
+                0
+              </span>
+
+              <span
+                class="product-filter-chevron"
+                aria-hidden="true"
+              ></span>
             </button>
 
             <div
               class="product-filter-panel"
               id="reportProductFilterPanel"
+              role="listbox"
+              aria-label="Product Name filter"
               hidden
-            ></div>
-          </label>
+            >
+              <div class="product-filter-search-wrap">
+                <span
+                  class="product-filter-search-icon"
+                  aria-hidden="true"
+                ></span>
+
+                <input
+                  type="search"
+                  class="product-filter-search"
+                  id="reportProductFilterSearch"
+                  placeholder="Search products..."
+                  autocomplete="off"
+                >
+              </div>
+
+              <div
+                class="product-filter-options"
+                id="reportProductFilterOptions"
+              ></div>
+            </div>
+          </div>
 
           <label>
             Location
