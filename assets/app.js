@@ -5242,7 +5242,7 @@ function drawInvoiceFooter(doc, pageWidth, pageHeight, marginX) {
 
   doc.text('livingword.id', textX, row1TextY);
   doc.text('+6285775242424', textX, row2TextY);
-  doc.text('devin@livingword.id', textX, row3TextY);
+  doc.text('finance@livingword.id', textX, row3TextY);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
