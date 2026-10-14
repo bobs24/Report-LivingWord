@@ -4156,48 +4156,34 @@ function syncSkuProduct(input) {
 }
 
 function cell(value, column) {
-  // =======================================================
-  // UI-only combined Sales product column
-  // =======================================================
-
+  // Compact Sales product cell: SKU on top, Product Name below.
   if (column === 'sales_product') {
     const row = value || {};
-
-    // Keep safe fallback values when source data is empty.
     const sku = cleanText(row.sku) || '-';
     const productName = cleanText(row.product_name) || '-';
 
     return `
       <div class="compact-product-cell">
-        <div class="compact-product-sku">
-          ${escapeHtml(sku)}
-        </div>
-
-        <div
-          class="compact-product-name"
-          title="${escapeHtml(productName)}"
-        >
+        <div class="compact-product-sku">${escapeHtml(sku)}</div>
+        <div class="compact-product-name" title="${escapeHtml(productName)}">
           ${escapeHtml(productName)}
         </div>
       </div>
     `;
   }
 
+  // Keep Order No. on one line, full value on hover.
   if (column === 'order_number') {
     const orderNumber = cleanText(value) || '-';
 
     return `
-      <span
-        class="sales-order-number"
-        title="${escapeHtml(orderNumber)}"
-      >
+      <span class="sales-order-number" title="${escapeHtml(orderNumber)}">
         ${escapeHtml(orderNumber)}
       </span>
     `;
   }
 
-
-
+  // Stock status badge.
   if (column === 'stock_status') {
     const className =
       value === 'Out of Stock'
@@ -4206,36 +4192,20 @@ function cell(value, column) {
           ? 'badge badge-low'
           : 'badge badge-ok';
 
-    return `
-      <span class="${className}">
-        ${escapeHtml(value)}
-      </span>
-    `;
+    return `<span class="${className}">${escapeHtml(value)}</span>`;
   }
 
-  // =======================================================
-  // Sales status display
-  // =======================================================
-
+  // Status column. Sales table passes the full row to show the payment pill.
   if (column === 'status') {
-    // Sales table passes the full row; other tables pass the value.
     const row =
       value && typeof value === 'object'
         ? value
         : { status: value };
 
     const status = row.status || 'ACTIVE';
+    const className = status === 'REVOKED' ? 'status-revoked' : 'status-active';
 
-    const className =
-      status === 'REVOKED'
-        ? 'status-revoked'
-        : 'status-active';
-
-    const statusBadge = `
-      <span class="${className}">
-        ${escapeHtml(status)}
-      </span>
-    `;
+    const statusBadge = `<span class="${className}">${escapeHtml(status)}</span>`;
 
     // Payment pill only for active Sales rows.
     if (!row.id || status === 'REVOKED') {
@@ -4259,159 +4229,93 @@ function cell(value, column) {
     `;
   }
 
-  // =======================================================
-  // Action controls
-  // =======================================================
-
+  // Action column.
   if (column === 'action') {
-    // Draft-row actions.
+    // Draft rows: Edit and Remove.
     if (typeof value === 'number') {
       return `
         <div class="draft-actions">
-          <button
-            class="icon-btn edit-line-btn"
-            type="button"
-            data-edit-line="${value}"
-            title="Edit draft line"
-          >
-            ✎
-          </button>
-
-          <button
-            class="icon-btn remove-line-btn"
-            type="button"
-            data-remove-line="${value}"
-            title="Remove draft line"
-          >
-            ×
-          </button>
+          <button class="icon-btn edit-line-btn" type="button" data-edit-line="${value}" title="Edit draft line">✎</button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-line="${value}" title="Remove draft line">×</button>
         </div>
       `;
     }
 
     const row = value || {};
 
-    // Stock-row actions.
+    // Stock rows: Edit, Info, Remove.
     if (row.__actionType === 'stock') {
       return `
         <div class="sales-action-group">
-          <button
-            class="icon-btn edit-line-btn"
-            type="button"
-            data-edit-stock-id="${escapeHtml(row.id)}"
-            title="Edit stock"
-            aria-label="Edit stock"
-          >
-            ✎
-          </button>
-
+          <button class="icon-btn edit-line-btn" type="button" data-edit-stock-id="${escapeHtml(row.id)}" title="Edit stock" aria-label="Edit stock">✎</button>
           ${stockInfoControl(row)}
-
-          <button
-            class="icon-btn remove-line-btn"
-            type="button"
-            data-remove-stock-id="${escapeHtml(row.id)}"
-            title="Remove stock"
-            aria-label="Remove stock"
-          >
-            ×
-          </button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-stock-id="${escapeHtml(row.id)}" title="Remove stock" aria-label="Remove stock">×</button>
         </div>
       `;
     }
 
-    // Transfer-row actions.
+    // Transfer rows: Remove only.
     if (row.__actionType === 'transfer') {
       return `
         <div class="draft-actions">
-          <button
-            class="icon-btn remove-line-btn"
-            type="button"
-            data-remove-transfer-id="${escapeHtml(row.id)}"
-            title="Remove transfer"
-          >
-            ×
-          </button>
+          <button class="icon-btn remove-line-btn" type="button" data-remove-transfer-id="${escapeHtml(row.id)}" title="Remove transfer">×</button>
         </div>
       `;
     }
 
-    const isRevoked =
-      (row.status || 'ACTIVE') === 'REVOKED';
+    // Sales rows: fixed slots Invoice | Info | Revoke.
+    const isRevoked = (row.status || 'ACTIVE') === 'REVOKED';
+    const isPaid = row.is_paid === true;
 
-    const invoiceChannels = [
-      'WA Order',
-      'Konsinyasi'
-    ];
-
+    const invoiceChannels = ['WA Order', 'Konsinyasi'];
     const canDownloadInvoice =
-      !isRevoked &&
-      invoiceChannels.includes(
-        cleanText(row.channel)
-      );
+      !isRevoked && invoiceChannels.includes(cleanText(row.channel));
 
+    // Slot 1: Invoice, or invisible placeholder to keep positions fixed.
     const invoiceControl = canDownloadInvoice
       ? `
         <span class="sales-action-slot">
-          <button
-            class="icon-btn edit-line-btn"
-            type="button"
-            data-invoice-sales-id="${escapeHtml(row.id)}"
-            title="Download invoice"
-            aria-label="Download invoice"
-          >
-            🧾
-          </button>
+          <button class="icon-btn edit-line-btn" type="button" data-invoice-sales-id="${escapeHtml(row.id)}" title="Download invoice" aria-label="Download invoice">🧾</button>
         </span>
       `
       : `
-        <span
-          class="sales-action-slot"
-          aria-hidden="true"
-        >
-          <span class="sales-invoice-placeholder">
-            🧾
-          </span>
+        <span class="sales-action-slot" aria-hidden="true">
+          <span class="sales-invoice-placeholder">🧾</span>
         </span>
       `;
 
-    // The Information icon always occupies the second slot.
+    // Slot 2: Info.
     const infoControl = `
       <span class="sales-action-slot">
         ${salesInfoControl(row)}
       </span>
     `;
 
-    // The third slot contains either Revoke or Revoked.
+    // Slot 3: Revoked label, locked Revoke (paid), or active Revoke.
     const revokeControl = isRevoked
-      ? `
-        <span class="sales-revoked-action">
-          Revoked
-        </span>
-      `
-      : row.is_paid === true
+      ? `<span class="sales-revoked-action">Revoked</span>`
+      : isPaid
         ? `
-          <button
-            class="revoke-btn revoke-locked"
-            type="button"
-            disabled
-            title="Paid sale. Unmark payment with a reason before revoking."
-          >
+          <button class="revoke-btn revoke-locked" type="button" disabled title="Paid sale. Unmark payment with a reason before revoking.">
             Revoke
           </button>
         `
         : `
-          <button
-            class="revoke-btn"
-            type="button"
-            data-revoke-sales-id="${escapeHtml(row.id)}"
-          >
+          <button class="revoke-btn" type="button" data-revoke-sales-id="${escapeHtml(row.id)}">
             Revoke
           </button>
         `;
+
+    return `
+      <div class="sales-action-group">
+        ${invoiceControl}
+        ${infoControl}
+        <span class="sales-revoke-slot">${revokeControl}</span>
+      </div>
+    `;
   }
 
-  // Default cell output for normal fields.
+  // Default output for normal fields.
   return escapeHtml(formatCell(value, column));
 }
 
