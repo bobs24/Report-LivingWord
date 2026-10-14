@@ -75,7 +75,7 @@ const state = {
 };
 
 const columns = {
-  sales: ['status', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'ongkos_kirim', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
+  sales: ['status', 'is_paid', 'action', 'sale_date', 'created_by', 'location', 'category', 'channel', 'order_number', 'customer_name', 'ongkos_kirim', 'sku', 'product_name', 'qty', 'price', 'discount_type', 'discount_value', 'discount', 'total_price', 'remark'],
   stock: ['action', 'stock_status', 'location', 'sku', 'product_name', 'qty', 'price', 'tier1_price', 'tier2_price', 'tier3_price', 'consign_price', 'cogs', 'updated_at', 'last_sold'],
   transfer: ['action', 'transfer_date', 'created_by', 'sku', 'product_name', 'from_location', 'to_location', 'qty', 'remark'],
   movement: ['created_at', 'created_by', 'movement_type', 'location', 'sku', 'product_name', 'qty_change', 'reference_type', 'reference_key', 'remark'],
@@ -1937,8 +1937,44 @@ async function removeTransfer(transferId) {
   await refreshAll();
 }
 
+async function toggleSalesPayment(salesId) {
+  if (!ensureReadyForWrite()) return;
+
+  const sale = state.sales.find((row) => row.id === salesId);
+  if (!sale) return showMessage('Sales record not found.', 'err');
+
+  const markAsPaid = sale.is_paid !== true;
+  let reason = '';
+
+  if (markAsPaid) {
+    // Marking paid only needs confirmation.
+    if (!confirm('Mark this sale as PAID? It cannot be revoked while paid.')) return;
+  } else {
+    // Unmarking requires a reason.
+    reason = prompt('Reason for marking this sale as UNPAID?');
+    if (reason === null) return;
+    if (!cleanText(reason)) return showMessage('Reason is required to unmark payment.', 'err');
+  }
+
+  const { error } = await state.client.rpc('set_sales_payment_status', {
+    p_sales_id: salesId,
+    p_is_paid: markAsPaid,
+    p_reason: cleanText(reason)
+  });
+
+  if (error) return showMessage(error.message, 'err');
+
+  showMessage(markAsPaid ? 'Sale marked as paid.' : 'Sale marked as unpaid.', 'ok');
+  await refreshAll();
+}
+
 async function revokeSale(id) {
   if (!ensureReadyForWrite()) return;
+  // Paid sales cannot be revoked until payment is unmarked.
+  const saleToRevoke = state.sales.find((row) => row.id === id);
+  if (saleToRevoke?.is_paid === true) {
+    return showMessage('This sale is PAID. Unmark payment with a reason before revoking.', 'err');
+  }
 
   const reason = prompt('Reason for revoke?');
   if (reason === null) return;
@@ -1964,6 +2000,7 @@ function handleTableActions(event) {
   const removeTransferButton = event.target.closest('[data-remove-transfer-id]');
   const invoiceButton = event.target.closest('[data-invoice-sales-id]');
   const stockSortButton = event.target.closest('[data-sort-stock-column]');
+  const paymentButton = event.target.closest('[data-payment-sales-id]');
 
   if (editDraftButton) editDraftLine(Number(editDraftButton.dataset.editLine));
   if (removeDraftButton) removeDraftLine(Number(removeDraftButton.dataset.removeLine));
@@ -1971,8 +2008,8 @@ function handleTableActions(event) {
   if (editStockButton) editStock(editStockButton.dataset.editStockId);
   if (removeStockButton) removeStock(removeStockButton.dataset.removeStockId);
   if (removeTransferButton) removeTransfer(removeTransferButton.dataset.removeTransferId);
-  if (invoiceButton) downloadSalesInvoice(invoiceButton.dataset.invoiceSalesId);
   if (stockSortButton) sortStockTable(stockSortButton.dataset.sortStockColumn);
+  if (paymentButton) toggleSalesPayment(paymentButton.dataset.paymentSalesId);
 }
 
 function renderMainTables() {
@@ -3019,6 +3056,11 @@ function renderTable(id, rows, tableColumns) {
                 'action',
                 'sales_product'
               ];
+
+              // Sales Status cell needs the full row to show the payment pill.
+              if (id === 'salesTable') {
+                rowBasedColumns.push('status');
+              }
 
               const value = column === 'action' && id === 'draftTable'
                 ? row.action
@@ -4176,17 +4218,44 @@ function cell(value, column) {
   // =======================================================
 
   if (column === 'status') {
-    const status = value || 'ACTIVE';
+    // Sales table passes the full row; other tables pass the value.
+    const row =
+      value && typeof value === 'object'
+        ? value
+        : { status: value };
+
+    const status = row.status || 'ACTIVE';
 
     const className =
       status === 'REVOKED'
         ? 'status-revoked'
         : 'status-active';
 
-    return `
+    const statusBadge = `
       <span class="${className}">
         ${escapeHtml(status)}
       </span>
+    `;
+
+    // Payment pill only for active Sales rows.
+    if (!row.id || status === 'REVOKED') {
+      return statusBadge;
+    }
+
+    const isPaid = row.is_paid === true;
+
+    return `
+      <div class="sales-status-stack">
+        ${statusBadge}
+        <button
+          type="button"
+          class="payment-pill ${isPaid ? 'is-paid' : 'is-unpaid'}"
+          data-payment-sales-id="${escapeHtml(row.id)}"
+          title="${isPaid ? 'Paid. Click to unmark (reason required).' : 'Unpaid. Click to mark as paid.'}"
+        >
+          ${isPaid ? 'Paid' : 'Unpaid'}
+        </button>
+      </div>
     `;
   }
 
@@ -4320,26 +4389,26 @@ function cell(value, column) {
           Revoked
         </span>
       `
-      : `
-        <button
-          class="revoke-btn"
-          type="button"
-          data-revoke-sales-id="${escapeHtml(row.id)}"
-        >
-          Revoke
-        </button>
-      `;
-
-    return `
-      <div class="sales-action-group">
-        ${invoiceControl}
-        ${infoControl}
-
-        <span class="sales-revoke-slot">
-          ${revokeControl}
-        </span>
-      </div>
-    `;
+      : row.is_paid === true
+        ? `
+          <button
+            class="revoke-btn revoke-locked"
+            type="button"
+            disabled
+            title="Paid sale. Unmark payment with a reason before revoking."
+          >
+            Revoke
+          </button>
+        `
+        : `
+          <button
+            class="revoke-btn"
+            type="button"
+            data-revoke-sales-id="${escapeHtml(row.id)}"
+          >
+            Revoke
+          </button>
+        `;
   }
 
   // Default cell output for normal fields.
