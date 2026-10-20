@@ -2008,6 +2008,7 @@ function handleTableActions(event) {
   if (editStockButton) editStock(editStockButton.dataset.editStockId);
   if (removeStockButton) removeStock(removeStockButton.dataset.removeStockId);
   if (removeTransferButton) removeTransfer(removeTransferButton.dataset.removeTransferId);
+  if (invoiceButton) downloadSalesInvoice(invoiceButton.dataset.invoiceSalesId);
   if (stockSortButton) sortStockTable(stockSortButton.dataset.sortStockColumn);
   if (paymentButton) toggleSalesPayment(paymentButton.dataset.paymentSalesId);
 }
