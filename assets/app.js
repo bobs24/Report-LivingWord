@@ -3972,6 +3972,10 @@ async function exportMatrixStock() {
 }
 
 function buildWideStockMatrix(sourceRows) {
+  // Number of metric columns per month:
+  // Beginning, Addition, Sales, Free Sample, Adjustment.
+  const metricCount = 5;
+
   // Collect unique months once and keep chronological order.
   const months = [...new Set(
     sourceRows.map((row) => cleanText(row.month_start))
@@ -3999,10 +4003,11 @@ function buildWideStockMatrix(sourceRows) {
   ];
 
   months.forEach((month, index) => {
-    const startColumn = 1 + index * 4;
+    const startColumn = 1 + index * metricCount;
 
     monthHeader.push(
       formatStockMatrixMonth(month),
+      '',
       '',
       '',
       ''
@@ -4012,12 +4017,14 @@ function buildWideStockMatrix(sourceRows) {
       'Beginning',
       'Addition',
       'Sales',
-      'Free Sample'
+      'Free Sample',
+      'Adjustment'
     );
 
+    // Merge the month title across its metric columns.
     merges.push({
       s: { r: 0, c: startColumn },
-      e: { r: 0, c: startColumn + 3 }
+      e: { r: 0, c: startColumn + metricCount - 1 }
     });
   });
 
@@ -4041,7 +4048,8 @@ function buildWideStockMatrix(sourceRows) {
           numberValue(value.beginning_qty),
           numberValue(value.addition_qty),
           numberValue(value.sales_qty),
-          numberValue(value.free_sample_qty)
+          numberValue(value.free_sample_qty),
+          numberValue(value.adjustment_qty)
         );
       });
 
@@ -4056,7 +4064,8 @@ function buildWideStockMatrix(sourceRows) {
       { wch: 13 },
       { wch: 13 },
       { wch: 13 },
-      { wch: 23 }
+      { wch: 15 },
+      { wch: 15 }
     );
   });
 
