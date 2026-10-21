@@ -1379,6 +1379,19 @@ function bindEvents() {
         }
       });
     });
+    // Redraw the Sales Trend when the window size changes,
+    // so the chart always matches the current screen width.
+    let chartResizeTimer = null;
+
+    window.addEventListener('resize', () => {
+      clearTimeout(chartResizeTimer);
+
+      chartResizeTimer = setTimeout(() => {
+        if (state.reportHasLoaded) {
+          renderActiveSalesTrend();
+        }
+      }, 200);
+    });
 }
 
 function setDefaultDates() {
@@ -3286,17 +3299,28 @@ function drawChart(id, data, options = {}) {
 
   // Product mode gives every product a readable slot.
   // Many products expand the SVG and enable horizontal scrolling.
+  // Minimum readable space per product label.
   const productSlotWidth = 110;
 
-  const width =
-    isProductMode
-      ? Math.max(
-          1120,
-          data.length *
-            productSlotWidth +
-            184
-        )
-      : 1120;
+  // Available chart width = card width minus the chart-box padding.
+  // Falls back to 1120 if the Report tab is not visible yet.
+  const containerWidth = Math.max(
+    (element.clientWidth || 1144) - 24,
+    640
+  );
+
+  // Width needed to show every product name without overlap.
+  const requiredProductWidth =
+    data.length * productSlotWidth + 184;
+
+  // Scroll only when products do not fit on the user's screen.
+  const needsScroll =
+    isProductMode && requiredProductWidth > containerWidth;
+
+  // Chart matches the screen width unless scrolling is required.
+  const width = needsScroll
+    ? requiredProductWidth
+    : containerWidth;
 
   const plotHeight = 330;
 
@@ -3642,7 +3666,7 @@ function drawChart(id, data, options = {}) {
       class="combo-chart advanced-chart"
       viewBox="0 0 ${width} ${height}"
       role="img"
-      style="display:block; width:${width}px; min-width:${width}px; height:auto;"
+      style="display:block; width:${needsScroll ? `${width}px` : '100%'}; min-width:${needsScroll ? `${width}px` : '0'}; height:auto;"
     >
       <style>
         .chart-hover {
@@ -5387,8 +5411,15 @@ function filterRows(rows, searchText) {
 function showTab(id, button) {
   document.querySelectorAll('.tab-section').forEach((section) => section.classList.remove('active'));
   document.querySelectorAll('.tab-button').forEach((tab) => tab.classList.remove('active'));
+
   $(id).classList.add('active');
   if (button) button.classList.add('active');
+
+  // Redraw the Sales Trend once the Report tab is visible,
+  // so the chart uses the real screen width.
+  if (id === 'reportSection' && state.reportHasLoaded) {
+    requestAnimationFrame(renderActiveSalesTrend);
+  }
 }
 
 function showMessage(text, type = 'ok') {
